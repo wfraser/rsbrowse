@@ -45,7 +45,7 @@ fn main() {
             std::process::exit(1);
         });
 
-    eprintln!("Building crate to generate analysis data...");
+    eprintln!("Running Cargo to generate analysis data...");
     Analysis::generate(&args.crate_path).unwrap();
 
     eprintln!("Reading analysis data...");

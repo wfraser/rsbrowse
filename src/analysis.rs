@@ -20,7 +20,7 @@ impl Analysis {
             .expect("failed to json-serialize rust analysis configuration");
 
         let cargo_status = std::process::Command::new("cargo")
-            .arg("build")
+            .arg("check")
             .env("RUSTFLAGS", "-Z save-analysis")
             .env("RUST_SAVE_ANALYSIS_CONFIG", &config_json)
             .current_dir(workspace_path)
