@@ -24,6 +24,20 @@ fn parse_args() -> Option<Arguments> {
     })
 }
 
+trait IterExt: Iterator {
+    fn single(mut self) -> Result<Self::Item, bool> where Self: Sized {
+        match self.next() {
+            Some(item) => match self.next() {
+                Some(_) => Err(true),
+                None => Ok(item),
+            }
+            None => Err(false),
+        }
+    }
+}
+
+impl<T: ?Sized> IterExt for T where T: Iterator {}
+
 fn main() {
     let args = parse_args()
         .unwrap_or_else(|| {
@@ -36,14 +50,17 @@ fn main() {
 
     eprintln!("Reading analysis data...");
     let analysis = Analysis::load(&args.crate_path);
-    for c in analysis.crates {
-        if c.id.name == args.crate_name {
-            println!("Top-level definitions:");
-            for def in c.analysis.defs {
-                if def.parent.is_none() {
-                    println!("\t{:?} {:?} ({}): {}", def.kind, def.name, def.qualname, def.value);
-                }
-            }
-        }
+
+    let crate_id = analysis.crates()
+        .filter(|id| id.name == args.crate_name)
+        .single()
+        .unwrap_or_else(|found|
+            panic!("{} instances of crates named {:?}",
+                if found { "multiple" } else { "no" },
+                args.crate_name));
+
+    println!("top-level definitions:");
+    for def in analysis.defs(crate_id, "").unwrap() {
+        println!("\t{:?} {:?} ({}): {}", def.kind, def.name, def.qualname, def.value);
     }
 }

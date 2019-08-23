@@ -44,6 +44,19 @@ impl Analysis {
             &[] as &[&str]);
         Self { crates }
     }
+
+    pub fn crates<'a>(&'a self) -> impl Iterator<Item=&'a rls_data::GlobalCrateId> + 'a {
+        self.crates.iter().map(|c| &c.id)
+    }
+
+    pub fn defs<'a>(&'a self, crate_id: &rls_data::GlobalCrateId, path: &'a str)
+        -> Option<impl Iterator<Item=&'a rls_data::Def> + 'a>
+    {
+        self.crates.iter()
+            .find(|c| &c.id == crate_id)
+            .map(|c| c.analysis.defs.iter()
+                 .filter(move |def| def.parent.is_none() && def.qualname.starts_with(path)))
+    }
 }
 
 #[derive(Clone)]
