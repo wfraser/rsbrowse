@@ -1,8 +1,9 @@
 use rls_analysis::{AnalysisHost, AnalysisLoader, SearchDirectory};
+use std::convert::TryFrom;
 use std::path::{Path, PathBuf};
 
 pub struct Analysis {
-    pub crates: Vec<rls_analysis::Crate>,
+    pub crates: Vec<Crate>,
 }
 
 impl Analysis {
@@ -40,22 +41,122 @@ impl Analysis {
     
     pub fn load(workspace_path: impl Into<PathBuf>) -> Self {
         let loader = Loader::new(workspace_path, "debug");
-        let crates = rls_analysis::read_analysis_from_files(&loader, Default::default(),
-            &[] as &[&str]);
+        let crates = rls_analysis::read_analysis_from_files(
+                &loader, Default::default(), &[] as &[&str])
+            .into_iter()
+            .map(|c| Crate::try_from(c).expect("unable to read crate analysis"))
+            .collect();
         Self { crates }
     }
 
-    pub fn crates<'a>(&'a self) -> impl Iterator<Item=&'a rls_data::GlobalCrateId> + 'a {
-        self.crates.iter().map(|c| &c.id)
+    pub fn crates<'a>(&'a self) -> impl Iterator<Item=CrateId> + 'a {
+        self.crates.iter().map(|c| c.id())
     }
 
-    pub fn defs<'a>(&'a self, crate_id: &rls_data::GlobalCrateId, path: &'a str)
+    pub fn crate_imported_by<'a>(&'a self, crate_id: &'a CrateId)
+        -> impl Iterator<Item=CrateId> + 'a
+    {
+        self.crates.iter()
+            .filter(move |c| {
+                c.inner.analysis.prelude.as_ref()
+                    .expect("missing crate prelude data")
+                    .external_crates
+                    .iter()
+                    .any(|ext| ext.id.name == crate_id.name
+                        && ext.id.disambiguator == crate_id.disambiguator)
+            })
+            .map(|c| c.id())
+    }
+
+    pub fn defs<'a>(&'a self, crate_id: &CrateId, path: &'a str)
         -> Option<impl Iterator<Item=&'a rls_data::Def> + 'a>
     {
         self.crates.iter()
-            .find(|c| &c.id == crate_id)
-            .map(|c| c.analysis.defs.iter()
+            .find(|c| c.matches(crate_id))
+            .map(|c| c.inner.analysis.defs.iter()
                  .filter(move |def| def.parent.is_none() && def.qualname.starts_with(path)))
+    }
+}
+
+#[derive(Debug)]
+pub struct Crate {
+    inner: rls_analysis::Crate,
+    crate_type: CrateType,
+}
+
+impl Crate {
+    pub fn id(&self) -> CrateId {
+        CrateId {
+            name: self.inner.id.name.clone(),
+            crate_type: self.crate_type,
+            disambiguator: self.inner.id.disambiguator,
+        }
+    }
+
+    pub fn matches(&self, id: &CrateId) -> bool {
+        self.inner.id.name == id.name
+            && self.inner.id.disambiguator == id.disambiguator
+    }
+}
+
+impl std::convert::AsRef<rls_analysis::Crate> for Crate {
+    fn as_ref(&self) -> &rls_analysis::Crate {
+        &self.inner
+    }
+}
+
+impl TryFrom<rls_analysis::Crate> for Crate {
+    type Error = String;
+    fn try_from(inner: rls_analysis::Crate) -> Result<Self, Self::Error> {
+        let mut crate_type: Option<CrateType> = None;
+        let rustc_args = match inner.analysis.compilation.as_ref() {
+            Some(opts) => &opts.arguments,
+            None => {
+                return Err(format!("missing compilation options in analysis of crate {:?}", inner.id));
+            }
+        };
+        for argpair in rustc_args.windows(2) {
+            if argpair[0] == "--crate-type" {
+                crate_type = Some(argpair[1].parse::<CrateType>()?);
+                break;
+            }
+        }
+        let crate_type = match crate_type {
+            Some(val) => val,
+            None => {
+                return Err(format!("missing crate-type in analysis of crate {:?}", inner.id));
+            }
+        };
+        Ok(Self {
+            inner,
+            crate_type,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CrateId {
+    pub name: String,
+    pub crate_type: CrateType,
+    pub disambiguator: (u64, u64),
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum CrateType {
+    Bin,
+    Lib,
+}
+
+impl std::str::FromStr for CrateType {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "bin" => Self::Bin,
+            "lib" => Self::Lib,
+            _ => {
+                return Err(format!("unknown crate type {:?}", s));
+            }
+        })
     }
 }
 

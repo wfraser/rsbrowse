@@ -39,6 +39,13 @@ trait IterExt: Iterator {
 
 impl<T: ?Sized> IterExt for T where T: Iterator {}
 
+fn crate_name(id: &analysis::CrateId) -> String {
+    match id.crate_type {
+        analysis::CrateType::Bin => id.name.clone() + " (bin)",
+        analysis::CrateType::Lib => id.name.clone(),
+    }
+}
+
 fn main() {
     let args = parse_args()
         .unwrap_or_else(|| {
@@ -54,7 +61,22 @@ fn main() {
 
     if args.crate_name == "--list-crates" {
         for c in analysis.crates() {
-            println!("{}", c.name);
+            println!("{} ({})",
+                crate_name(&c),
+                analysis.crate_imported_by(&c)
+                    .fold(None::<String>, |result, item| {
+                        Some(match result {
+                            None => format!("imported by {}", crate_name(&item)),
+                            Some(mut s)  => {
+                                if !s.is_empty() {
+                                    s += ", ";
+                                }
+                                s += &crate_name(&item);
+                                s
+                            }
+                        })
+                    })
+                    .unwrap_or_else(|| "root".to_owned()));
         }
         return;
     }
@@ -73,7 +95,7 @@ fn main() {
         });
 
     println!("top-level definitions:");
-    for def in analysis.defs(crate_id, "").unwrap() {
+    for def in analysis.defs(&crate_id, "").unwrap() {
         println!("\t{:?} {:?} ({}): {}", def.kind, def.name, def.qualname, def.value);
     }
 }
