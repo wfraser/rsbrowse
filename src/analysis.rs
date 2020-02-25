@@ -53,6 +53,10 @@ impl Analysis {
         self.crates.iter()
             .map(|c| c.id())
     }
+
+    pub fn get_crate<'a>(&'a self, id: &CrateId) -> &'a Crate {
+        self.crates.iter().find(|c| c.matches_id(id)).as_ref().unwrap()
+    }
 }
 
 #[derive(Debug)]
@@ -68,6 +72,12 @@ impl Crate {
             crate_type: self.crate_type,
             disambiguator: self.inner.id.disambiguator,
         }
+    }
+
+    pub fn matches_id(&self, id: &CrateId) -> bool {
+        self.inner.id.name == id.name
+            && self.inner.id.disambiguator == id.disambiguator
+
     }
 }
 

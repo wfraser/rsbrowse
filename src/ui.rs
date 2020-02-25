@@ -1,6 +1,7 @@
 use cursive::Cursive;
 use cursive::event::Key;
 use cursive::views;
+use cursive::traits::*;
 
 use crate::analysis::{Analysis, CrateId, CrateType};
 
@@ -10,6 +11,10 @@ fn crate_label(c: &CrateId) -> String {
         CrateType::ProcMacro => format!("{} (proc-macro)", c.name),
         CrateType::Lib => c.name.clone(),
     }
+}
+
+struct UserData {
+    analysis: Analysis,
 }
 
 pub fn ui_loop(analysis: Analysis) {
@@ -42,15 +47,47 @@ pub fn ui_loop(analysis: Analysis) {
     select.set_autojump(true);
 
     select.set_on_submit(|ui, item| {
+        let data = ui.user_data::<UserData>().unwrap();
+
+        let dialog_txt = format!("{:#?}\n{:#?}", item, data.analysis.get_crate(item));
+        //ui.add_layer(views::Dialog::info(dialog_txt));
         ui.add_layer(
-            views::Dialog::info(format!("{:#?}", item))
+            views::Dialog::around(
+                views::ScrollView::new(
+                    views::TextView::new(dialog_txt)
+                    )
+                    .scroll_y(true)
+                )
+                .dismiss_button("ok")
         );
+
+        let mut next = views::SelectView::new();
+        // replace this with adding all the defs in the selected crate
+        for n in 0 .. 50 {
+            next.add_item(format!("{}", n), n);
+        }
+
+        ui.call_on_name("horiz_layout", |view: &mut views::LinearLayout| {
+            view.add_child(
+                views::ScrollView::new(next)
+                    .scroll_y(true)
+            );
+            view.set_focus_index(view.get_focus_index() + 1).unwrap();
+        });
     });
 
     ui.add_fullscreen_layer(
-        views::ScrollView::new(select)
-            .scroll_y(true)
+        views::ScrollView::new(
+            views::LinearLayout::horizontal()
+                .child(
+                    views::ScrollView::new(select)
+                        .scroll_y(true)
+                )
+                .with_name("horiz_layout")
+            )
+            .scroll_x(true)
     );
 
+    ui.set_user_data(UserData { analysis });
     ui.run();
 }
