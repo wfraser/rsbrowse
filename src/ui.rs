@@ -47,7 +47,10 @@ pub fn ui_loop(analysis: Analysis) {
         );
     });
 
-    ui.add_fullscreen_layer(select);
+    ui.add_fullscreen_layer(
+        views::ScrollView::new(select)
+            .scroll_y(true)
+    );
 
     ui.run();
 }
