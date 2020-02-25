@@ -3,9 +3,10 @@ use std::path::PathBuf;
 mod analysis;
 use analysis::Analysis;
 
+mod ui;
+
 struct Arguments {
     crate_path: PathBuf,
-    crate_name: String,
 }
 
 fn usage() {
@@ -14,13 +15,10 @@ fn usage() {
 }
 
 fn parse_args() -> Option<Arguments> {
-    let crate_name = std::env::args()
-        .nth(1)?;
     let crate_path: PathBuf = std::env::args_os()
-        .nth(2)?
+        .nth(1)?
         .into();
     Some(Arguments {
-        crate_name,
         crate_path,
     })
 }
@@ -43,6 +41,7 @@ fn crate_name(id: &analysis::CrateId) -> String {
     match id.crate_type {
         analysis::CrateType::Bin => id.name.clone() + " (bin)",
         analysis::CrateType::Lib => id.name.clone(),
+        analysis::CrateType::ProcMacro => id.name.clone(),
     }
 }
 
@@ -59,6 +58,7 @@ fn main() {
     eprintln!("Reading analysis data...");
     let analysis = Analysis::load(&args.crate_path);
 
+    /*
     if args.crate_name == "--list-crates" {
         for c in analysis.crates() {
             println!("{} ({})",
@@ -80,7 +80,9 @@ fn main() {
         }
         return;
     }
+    */
 
+    /*
     let crate_id = analysis.crates()
         .filter(|id| id.name == args.crate_name)
         .single()
@@ -98,4 +100,7 @@ fn main() {
     for def in analysis.defs(&crate_id, "").unwrap() {
         println!("\t{:?} {:?} ({}): {}", def.kind, def.name, def.qualname, def.value);
     }
+    */
+
+    ui::ui_loop(analysis);
 }

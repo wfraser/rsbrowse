@@ -145,6 +145,7 @@ pub struct CrateId {
 pub enum CrateType {
     Bin,
     Lib,
+    ProcMacro,
 }
 
 impl std::str::FromStr for CrateType {
@@ -153,6 +154,7 @@ impl std::str::FromStr for CrateType {
         Ok(match s {
             "bin" => Self::Bin,
             "lib" => Self::Lib,
+            "proc-macro" => Self::ProcMacro,
             _ => {
                 return Err(format!("unknown crate type {:?}", s));
             }
