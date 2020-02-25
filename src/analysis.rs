@@ -26,7 +26,7 @@ impl Analysis {
             .env("RUST_SAVE_ANALYSIS_CONFIG", &config_json)
             .current_dir(workspace_path)
             .status()
-            .map_err(|e| 
+            .map_err(|e|
                 format!("failed to run 'cargo build': {}", e)
             )?;
 
@@ -38,7 +38,7 @@ impl Analysis {
             Err("'cargo build' killed by signal".to_owned())
         }
     }
-    
+
     pub fn load(workspace_path: impl Into<PathBuf>) -> Self {
         let loader = Loader::new(workspace_path, "debug");
         let crates = rls_analysis::read_analysis_from_files(
@@ -49,32 +49,9 @@ impl Analysis {
         Self { crates }
     }
 
-    pub fn crates<'a>(&'a self) -> impl Iterator<Item=CrateId> + 'a {
-        self.crates.iter().map(|c| c.id())
-    }
-
-    pub fn crate_imported_by<'a>(&'a self, crate_id: &'a CrateId)
-        -> impl Iterator<Item=CrateId> + 'a
-    {
+    pub fn crate_ids<'a>(&'a self) -> impl Iterator<Item=CrateId> + 'a {
         self.crates.iter()
-            .filter(move |c| {
-                c.inner.analysis.prelude.as_ref()
-                    .expect("missing crate prelude data")
-                    .external_crates
-                    .iter()
-                    .any(|ext| ext.id.name == crate_id.name
-                        && ext.id.disambiguator == crate_id.disambiguator)
-            })
             .map(|c| c.id())
-    }
-
-    pub fn defs<'a>(&'a self, crate_id: &CrateId, path: &'a str)
-        -> Option<impl Iterator<Item=&'a rls_data::Def> + 'a>
-    {
-        self.crates.iter()
-            .find(|c| c.matches(crate_id))
-            .map(|c| c.inner.analysis.defs.iter()
-                 .filter(move |def| def.parent.is_none() && def.qualname.starts_with(path)))
     }
 }
 
@@ -91,11 +68,6 @@ impl Crate {
             crate_type: self.crate_type,
             disambiguator: self.inner.id.disambiguator,
         }
-    }
-
-    pub fn matches(&self, id: &CrateId) -> bool {
-        self.inner.id.name == id.name
-            && self.inner.id.disambiguator == id.disambiguator
     }
 }
 
@@ -134,14 +106,14 @@ impl TryFrom<rls_analysis::Crate> for Crate {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct CrateId {
     pub name: String,
     pub crate_type: CrateType,
     pub disambiguator: (u64, u64),
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub enum CrateType {
     Bin,
     Lib,

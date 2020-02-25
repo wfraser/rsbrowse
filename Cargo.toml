@@ -6,7 +6,11 @@ description = "an interactive browser for the contents of Rust crates"
 edition = "2018"
 
 [dependencies]
-cursive = "0.14"
 rls-analysis = "0.18.0"
 rls-data = "0.19.0"
 serde_json = "1.0"
+
+[dependencies.cursive]
+version = "0.14"
+default-features = false
+features = ["crossterm-backend"]
