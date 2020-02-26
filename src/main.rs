@@ -11,7 +11,6 @@ struct Arguments {
 
 fn usage() {
     eprintln!("usage: {} <cargo workspace path>", std::env::args().next().unwrap());
-    eprintln!("    or specify '--list-crates' for <crate name> to list all crates in the workspace");
 }
 
 fn parse_args() -> Option<Arguments> {

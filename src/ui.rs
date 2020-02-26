@@ -72,6 +72,12 @@ pub fn ui_loop(analysis: Analysis) {
     crates_select.set_autojump(true);
 
     crates_select.set_on_submit(|ui, crate_id| {
+        ui.call_on_name("horiz_layout", |view: &mut views::LinearLayout| {
+            while view.len() > 1 {
+                view.remove_child(view.len() - 1);
+            }
+        });
+
         let data = ui.user_data::<UserData>().unwrap();
 
         // TODO: module paths
@@ -82,6 +88,9 @@ pub fn ui_loop(analysis: Analysis) {
             })
             .collect::<Vec<_>>();
         defs.sort_unstable_by(|(a, _), (b, _)| a.cmp(&b));
+        if defs.is_empty() {
+            return;
+        }
 
         let mut next = views::SelectView::new();
         for (label, def) in defs {
@@ -102,9 +111,6 @@ pub fn ui_loop(analysis: Analysis) {
         });
 
         ui.call_on_name("horiz_layout", |view: &mut views::LinearLayout| {
-            while view.len() > 1 {
-                view.remove_child(view.len() - 1);
-            }
             view.add_child(
                 views::ScrollView::new(next)
                     .scroll_y(true)
