@@ -13,4 +13,4 @@ serde_json = "1.0"
 [dependencies.cursive]
 version = "0.14"
 default-features = false
-features = ["crossterm-backend"]
+features = ["pancurses-backend"]
