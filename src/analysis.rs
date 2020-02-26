@@ -57,6 +57,14 @@ impl Analysis {
     pub fn get_crate<'a>(&'a self, id: &CrateId) -> &'a Crate {
         self.crates.iter().find(|c| c.matches_id(id)).as_ref().unwrap()
     }
+
+    pub fn defs<'a>(&'a self, crate_id: &CrateId, _mods: &[&str]) -> impl Iterator<Item=&'a rls_data::Def> + 'a {
+        self.get_crate(crate_id)
+            .inner
+            .analysis
+            .defs
+            .iter()
+    }
 }
 
 #[derive(Debug)]
@@ -77,7 +85,6 @@ impl Crate {
     pub fn matches_id(&self, id: &CrateId) -> bool {
         self.inner.id.name == id.name
             && self.inner.id.disambiguator == id.disambiguator
-
     }
 }
 
