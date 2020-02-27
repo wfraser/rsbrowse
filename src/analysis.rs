@@ -58,12 +58,15 @@ impl Analysis {
         self.crates.iter().find(|c| c.matches_id(id)).as_ref().unwrap()
     }
 
-    pub fn defs<'a>(&'a self, crate_id: &CrateId, _mods: &[&str]) -> impl Iterator<Item=&'a rls_data::Def> + 'a {
+    pub fn defs<'a>(&'a self, crate_id: &CrateId, parent: Option<rls_data::Id>)
+        -> impl Iterator<Item=&'a rls_data::Def> + 'a
+    {
         self.get_crate(crate_id)
             .inner
             .analysis
             .defs
             .iter()
+            .filter(move |def| def.parent == parent)
     }
 }
 

@@ -35,5 +35,5 @@ fn main() {
     eprintln!("Reading analysis data...");
     let analysis = Analysis::load(&args.workspace_path);
 
-    ui::ui_loop(analysis);
+    ui::run(analysis);
 }

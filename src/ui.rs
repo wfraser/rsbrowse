@@ -24,7 +24,7 @@ fn def_label(def: &Def) -> Option<String> {
         }
         DefKind::Enum => "enum",
         DefKind::Struct => "struct",
-        DefKind::Function => "fn",
+        DefKind::Function | DefKind::Method => "fn",
         DefKind::Tuple => "tuple",
         DefKind::Union => "union",
         DefKind::Trait => "trait",
@@ -35,8 +35,8 @@ fn def_label(def: &Def) -> Option<String> {
         DefKind::Const => "const",
         DefKind::Static => "static",
         DefKind::ForeignStatic => "extern static",
-        DefKind::Local | DefKind::Method | DefKind::Field | DefKind::TupleVariant
-            | DefKind::StructVariant => return None,
+        DefKind::TupleVariant | DefKind::StructVariant | DefKind::Field => return Some(def.value.clone()),
+        DefKind::Local => return None,
     };
     Some(format!("{} {}", prefix, def.name))
 }
@@ -45,7 +45,66 @@ struct UserData {
     analysis: Analysis,
 }
 
-pub fn ui_loop(analysis: Analysis) {
+fn make_selectview(data: &mut UserData, crate_id: CrateId, parent: Option<rls_data::Id>, depth: usize)
+    -> Option<impl cursive::view::View>
+{
+    let mut defs = data.analysis.defs(&crate_id, parent)
+        .filter_map(|def| {
+            def_label(def)
+                .map(|label| (label, def.clone()))
+        })
+        .collect::<Vec<_>>();
+    defs.sort_unstable_by(|(a, _), (b, _)| a.cmp(&b));
+    if defs.is_empty() {
+        return None;
+    }
+
+    let mut select = views::SelectView::new();
+    for (label, def) in defs {
+        select.add_item(label, def);
+    }
+
+    select.set_on_submit(|ui, def| {
+        let txt = format!("{:#?}", def);
+        ui.add_layer(
+            views::Dialog::around(
+                views::ScrollView::new(
+                    views::TextView::new(txt)
+                    )
+                    .scroll_y(true)
+                )
+                .dismiss_button("ok")
+        );
+    });
+
+    select.set_on_select(move |ui, def| {
+        ui.call_on_name("horiz_layout", |view: &mut views::LinearLayout| {
+            while view.len() > depth {
+                view.remove_child(view.len() - 1);
+            }
+        });
+
+        let data = ui.user_data::<UserData>().unwrap();
+
+        let next = match make_selectview(data, crate_id.clone(), Some(def.id), depth + 1) {
+            Some(view) => view,
+            None => return,
+        };
+
+        ui.call_on_name("horiz_layout", |view: &mut views::LinearLayout| {
+            view.add_child(
+                views::ScrollView::new(next)
+                    .scroll_y(true)
+                    .show_scrollbars(true)
+            );
+            //view.set_focus_index(view.len() - 1).unwrap();
+        });
+    });
+
+    Some(select)
+}
+
+pub fn run(analysis: Analysis) {
     let mut ui = Cursive::default();
 
     /*
@@ -80,40 +139,16 @@ pub fn ui_loop(analysis: Analysis) {
 
         let data = ui.user_data::<UserData>().unwrap();
 
-        // TODO: module paths
-        let mut defs = data.analysis.defs(crate_id, &[])
-            .filter_map(|def| {
-                def_label(def)
-                    .map(|label| (label, def.clone()))
-            })
-            .collect::<Vec<_>>();
-        defs.sort_unstable_by(|(a, _), (b, _)| a.cmp(&b));
-        if defs.is_empty() {
-            return;
-        }
-
-        let mut next = views::SelectView::new();
-        for (label, def) in defs {
-            next.add_item(label, def);
-        }
-
-        next.set_on_submit(|ui, def| {
-            let txt = format!("{:#?}", def);
-            ui.add_layer(
-                views::Dialog::around(
-                    views::ScrollView::new(
-                        views::TextView::new(txt)
-                        )
-                        .scroll_y(true)
-                    )
-                    .dismiss_button("ok")
-            );
-        });
+        let next = match make_selectview(data, crate_id.clone(), None, 2) {
+            Some(view) => view,
+            None => return,
+        };
 
         ui.call_on_name("horiz_layout", |view: &mut views::LinearLayout| {
             view.add_child(
                 views::ScrollView::new(next)
                     .scroll_y(true)
+                    .show_scrollbars(true)
             );
             view.set_focus_index(1).unwrap();
         });
