@@ -68,6 +68,17 @@ impl Analysis {
             .iter()
             .filter(move |def| def.parent == parent)
     }
+
+    pub fn get_def<'a>(&'a self, crate_id: &CrateId, id: rls_data::Id)
+        -> Option<&'a rls_data::Def>
+    {
+        self.get_crate(crate_id)
+            .inner
+            .analysis
+            .defs
+            .iter()
+            .find(|def| def.id == id)
+    }
 }
 
 #[derive(Debug)]

@@ -64,8 +64,15 @@ fn make_selectview(data: &mut UserData, crate_id: CrateId, parent: Option<rls_da
         select.add_item(label, def);
     }
 
-    select.set_on_submit(|ui, def| {
-        let txt = format!("{:#?}", def);
+    let crate_id2 = crate_id.clone();
+    select.set_on_submit(move |ui, def| {
+        let data = ui.user_data::<UserData>().unwrap();
+        let mut txt = format!("{:#?}", def);
+        for child_id in &def.children {
+            if let Some(child) = data.analysis.get_def(&crate_id2, *child_id) {
+                txt += &format!("\nchild {:?} = {:#?}", child_id, child);
+            }
+        }
         ui.add_layer(
             views::Dialog::around(
                 views::ScrollView::new(
