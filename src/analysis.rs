@@ -58,15 +58,38 @@ impl Analysis {
         self.crates.iter().find(|c| c.matches_id(id)).as_ref().unwrap()
     }
 
-    pub fn defs<'a>(&'a self, crate_id: &CrateId, parent: Option<rls_data::Id>)
+    pub fn defs<'a>(&'a self, crate_id: &CrateId, parent_id: Option<rls_data::Id>)
         -> impl Iterator<Item=&'a rls_data::Def> + 'a
     {
+        let a = &self.get_crate(crate_id).inner.analysis;
+
+        let parent = match parent_id {
+            None => {
+                a.defs.iter()
+                    .find(|def| {
+                        def.kind == rls_data::DefKind::Mod
+                            && def.name == ""
+                    })
+                    .expect("missing root module")
+            }
+            Some(id) => {
+                a.defs.iter()
+                    .find(|def| def.id == id)
+                    .unwrap_or_else(|| panic!("no def found for ID {:?}", id))
+            }
+        };
+
+        a.defs.iter()
+            .filter(move |def| parent.children.contains(&def.id))
+
+        /*
         self.get_crate(crate_id)
             .inner
             .analysis
             .defs
             .iter()
             .filter(move |def| def.parent == parent)
+        */
     }
 
     pub fn get_def<'a>(&'a self, crate_id: &CrateId, id: rls_data::Id)

@@ -15,13 +15,7 @@ fn crate_label(c: &CrateId) -> String {
 
 fn def_label(def: &Def) -> Option<String> {
     let prefix = match def.kind {
-        DefKind::Mod => {
-            if def.qualname == "::" {
-                return None;
-            } else {
-                "mod"
-            }
-        }
+        DefKind::Mod => "mod",
         DefKind::Enum => "enum",
         DefKind::Struct => "struct",
         DefKind::Function | DefKind::Method => "fn",
@@ -35,8 +29,9 @@ fn def_label(def: &Def) -> Option<String> {
         DefKind::Const => "const",
         DefKind::Static => "static",
         DefKind::ForeignStatic => "extern static",
-        DefKind::TupleVariant | DefKind::StructVariant | DefKind::Field => return Some(def.value.clone()),
-        DefKind::Local => return None,
+        DefKind::TupleVariant | DefKind::StructVariant => return Some(def.value.clone()),
+        DefKind::Field => return Some(format!("{}: {}", def.name, def.value)),
+        DefKind::Local => "local", // or should we return None?
     };
     Some(format!("{} {}", prefix, def.name))
 }
@@ -46,7 +41,7 @@ struct UserData {
 }
 
 fn make_selectview(data: &mut UserData, crate_id: CrateId, parent: Option<rls_data::Id>, depth: usize)
-    -> Option<impl cursive::view::View>
+    -> Option<views::SelectView<rls_data::Def>>
 {
     let mut defs = data.analysis.defs(&crate_id, parent)
         .filter_map(|def| {
@@ -85,30 +80,38 @@ fn make_selectview(data: &mut UserData, crate_id: CrateId, parent: Option<rls_da
     });
 
     select.set_on_select(move |ui, def| {
-        ui.call_on_name("horiz_layout", |view: &mut views::LinearLayout| {
-            while view.len() > depth {
-                view.remove_child(view.len() - 1);
-            }
-        });
-
-        let data = ui.user_data::<UserData>().unwrap();
-
-        let next = match make_selectview(data, crate_id.clone(), Some(def.id), depth + 1) {
-            Some(view) => view,
-            None => return,
-        };
-
-        ui.call_on_name("horiz_layout", |view: &mut views::LinearLayout| {
-            view.add_child(
-                views::ScrollView::new(next)
-                    .scroll_y(true)
-                    .show_scrollbars(true)
-            );
-            //view.set_focus_index(view.len() - 1).unwrap();
-        });
+        add_panel(ui, crate_id.clone(), Some(def.id), depth + 1);
     });
 
     Some(select)
+}
+
+fn add_panel(ui: &mut Cursive, crate_id: CrateId, parent_id: Option<rls_data::Id>, depth: usize) {
+    ui.call_on_name("horiz_layout", |view: &mut views::LinearLayout| {
+        while view.len() > depth {
+            view.remove_child(view.len() - 1);
+        }
+    });
+
+    let data: &mut UserData = ui.user_data().unwrap();
+
+    let next = match make_selectview(data, crate_id.clone(), parent_id, depth) {
+        Some(view) => view,
+        None => return,
+    };
+
+    ui.call_on_name("horiz_layout", |view: &mut views::LinearLayout| {
+        view.add_child(
+            views::ScrollView::new(next)
+                .scroll_y(true)
+                .show_scrollbars(true)
+        );
+
+        // If this is the first one, we were called from pressing Enter, so focus it.
+        if depth == 1 {
+            view.set_focus_index(1).unwrap();
+        }
+    });
 }
 
 pub fn run(analysis: Analysis) {
@@ -138,27 +141,7 @@ pub fn run(analysis: Analysis) {
     crates_select.set_autojump(true);
 
     crates_select.set_on_submit(|ui, crate_id| {
-        ui.call_on_name("horiz_layout", |view: &mut views::LinearLayout| {
-            while view.len() > 1 {
-                view.remove_child(view.len() - 1);
-            }
-        });
-
-        let data = ui.user_data::<UserData>().unwrap();
-
-        let next = match make_selectview(data, crate_id.clone(), None, 2) {
-            Some(view) => view,
-            None => return,
-        };
-
-        ui.call_on_name("horiz_layout", |view: &mut views::LinearLayout| {
-            view.add_child(
-                views::ScrollView::new(next)
-                    .scroll_y(true)
-                    .show_scrollbars(true)
-            );
-            view.set_focus_index(1).unwrap();
-        });
+        add_panel(ui, crate_id.clone(), None, 1);
     });
 
     ui.add_fullscreen_layer(
