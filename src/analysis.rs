@@ -12,8 +12,8 @@ impl Analysis {
             &rls_data::config::Config {
                 output_file: None, // use default paths
                 full_docs: true,
-                pub_only: true,
-                reachable_only: true,
+                pub_only: false,        // this should be controlled by cmdline args or something
+                reachable_only: false,  // this should be controlled by cmdline args or something
                 distro_crate: false,
                 signatures: false, // this seems to be busted
                 borrow_data: false,
@@ -81,15 +81,6 @@ impl Analysis {
 
         a.defs.iter()
             .filter(move |def| parent.children.contains(&def.id))
-
-        /*
-        self.get_crate(crate_id)
-            .inner
-            .analysis
-            .defs
-            .iter()
-            .filter(move |def| def.parent == parent)
-        */
     }
 
     pub fn get_def<'a>(&'a self, crate_id: &CrateId, id: rls_data::Id)
@@ -102,6 +93,54 @@ impl Analysis {
             .iter()
             .find(|def| def.id == id)
     }
+
+    pub fn impls<'a>(&'a self, crate_id: &CrateId, parent_id: rls_data::Id)
+        -> impl Iterator<Item=ImplDetails> + 'a
+    {
+        self.get_crate(crate_id)
+            .inner
+            .analysis
+            .relations
+            .iter()
+            .filter_map(move |rel| match rel.kind {
+                rls_data::RelationKind::Impl { id: impl_id } => {
+                    if rel.from == parent_id {
+                        let trait_id = match rel.to {
+                            rls_data::Id { krate: std::u32::MAX, index: std::u32::MAX } => None,
+                            other => Some(other),
+                        };
+                        Some(ImplDetails {
+                            impl_id,
+                            impl_on: rel.from,
+                            trait_id,
+                            span: rel.span.clone(),
+                        })
+                    } else {
+                        None
+                    }
+                }
+                rls_data::RelationKind::SuperTrait => None,
+            })
+    }
+
+    pub fn get_impl<'a>(&'a self, crate_id: &CrateId, impl_id: u32)
+        -> Option<&'a rls_data::Impl>
+    {
+        self.get_crate(crate_id)
+            .inner
+            .analysis
+            .impls
+            .iter()
+            .find(|i| i.id == impl_id)
+    }
+}
+
+#[derive(Debug)]
+pub struct ImplDetails {
+    pub impl_id: u32,
+    pub trait_id: Option<rls_data::Id>,
+    pub impl_on: rls_data::Id,
+    pub span: rls_data::SpanData,
 }
 
 #[derive(Debug)]
@@ -172,6 +211,7 @@ pub enum CrateType {
     Bin,
     Lib,
     ProcMacro,
+    CDylib,
 }
 
 impl std::str::FromStr for CrateType {
@@ -181,6 +221,7 @@ impl std::str::FromStr for CrateType {
             "bin" => Self::Bin,
             "lib" => Self::Lib,
             "proc-macro" => Self::ProcMacro,
+            "cdylib" => Self::CDylib,
             _ => {
                 return Err(format!("unknown crate type {:?}", s));
             }
