@@ -1,12 +1,8 @@
 use std::path::PathBuf;
 
-mod analysis;
-use analysis::Analysis;
-
-mod browser;
-use browser::Browser;
-
-mod ui;
+use rsbrowse::analysis::Analysis;
+use rsbrowse::browser::Browser;
+use rsbrowse::ui;
 
 struct Arguments {
     workspace_path: PathBuf,
