@@ -3,6 +3,9 @@ use std::path::PathBuf;
 mod analysis;
 use analysis::Analysis;
 
+mod browser;
+use browser::Browser;
+
 mod ui;
 
 struct Arguments {
@@ -35,5 +38,6 @@ fn main() {
     eprintln!("Reading analysis data...");
     let analysis = Analysis::load(&args.workspace_path);
 
-    ui::run(analysis);
+    let browser = Browser::new(analysis);
+    ui::run(browser);
 }
