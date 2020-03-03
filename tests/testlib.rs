@@ -90,20 +90,10 @@ impl ItemExt for Item {
 }
 
 #[test]
-fn it_loads() {
-    let _force_it_to_load = &BROWSER;
-}
-
-#[test]
-fn list_crates() {
-    let crates = BROWSER.list_crates();
-    assert!(crates.contains_label("testcrate"));
-    assert!(crates.contains_label("log"));
-}
-
-#[test]
 fn list_items() {
     let crates = BROWSER.list_crates();
+    assert_eq!(crates.labels(), &["testcrate", "testcrate (bin)"]);
+
     let crate_id = crates.by_label("testcrate");
 
     // Pane 1
