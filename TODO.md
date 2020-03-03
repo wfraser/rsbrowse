@@ -1,5 +1,4 @@
 # Bugs
-* a pane with only one item can never be expanded to the next pane
 * types that impl a trait and override provided methods have both shown
 
 # Enhancements

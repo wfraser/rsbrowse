@@ -135,7 +135,7 @@ impl Analysis {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ImplDetails {
     pub impl_id: u32,
     pub trait_id: Option<rls_data::Id>,

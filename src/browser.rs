@@ -162,7 +162,7 @@ fn def_label(def: &Def) -> String {
     format!("{} {}", prefix, def.name)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Item {
     Root,
     Def(rls_data::Def),

@@ -4,6 +4,7 @@ use cursive::views;
 use cursive::traits::*;
 use crate::analysis::CrateId;
 use crate::browser::{Browser, Item};
+use std::borrow::Cow;
 
 struct UserData {
     browser: Browser,
@@ -56,21 +57,52 @@ fn add_panel(ui: &mut Cursive, crate_id: CrateId, parent: &Item, depth: usize) {
 
     let data: &mut UserData = ui.user_data().unwrap();
 
-    let next = match make_selectview(data, crate_id, parent, depth) {
-        Some(view) => view,
-        None => return,
-    };
+    // Mega-hax here: instatiating the next pane is done when selection changes on the current pane.
+    // If the current pane only has one item, there's no way to change selection, and so no way to
+    // browse deeper within the tree. Ideally we'd just do this when focus between panes changes,
+    // but Cursive doesn't have any way for a view to respond to being focused, nor does its
+    // LinearLayout have a callback on switching views. So instead, if the view is going to have
+    // only one item, we go ahead and create the next view *right away*. This continues until we run
+    // out of stuff or have a pane with >1 item.
+    let mut next = vec![];
+    let mut local_depth = depth;
+    let mut local_parent = Cow::Borrowed(parent);
+    loop {
+        let view = match make_selectview(data, crate_id.clone(), &local_parent, local_depth) {
+            Some(view) => view,
+            None => break,
+        };
 
-    ui.call_on_name("horiz_layout", |view: &mut views::LinearLayout| {
-        view.add_child(
-            views::ScrollView::new(next)
-                .scroll_y(true)
-                .show_scrollbars(true)
-        );
+        // Only one item in the view; continue to loop, using the single item in this view as the
+        // parent for the next pane.
+        if view.len() == 1 {
+            if let Some((_label, item)) = view.get_item(0) {
+                local_depth += 1;
+                local_parent = Cow::Owned(item.clone());
+            }
+            next.push(view);
+        } else {
+            next.push(view);
+            break;
+        }
+    }
+
+    if next.is_empty() {
+        return;
+    }
+
+    ui.call_on_name("horiz_layout", |horiz_layout: &mut views::LinearLayout| {
+        for view in next {
+            horiz_layout.add_child(
+                views::ScrollView::new(view)
+                    .scroll_y(true)
+                    .show_scrollbars(true)
+            );
+        }
 
         // If this is the first one, we were called from pressing Enter, so focus it.
         if depth == 1 {
-            view.set_focus_index(1).unwrap();
+            horiz_layout.set_focus_index(1).unwrap();
         }
     });
 }
