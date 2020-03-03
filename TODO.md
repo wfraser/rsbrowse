@@ -1,5 +1,5 @@
 # Bugs
-* types that impl a trait and override provided methods have both shown
+* ???
 
 # Enhancements
 * format the label of functions to include the signature

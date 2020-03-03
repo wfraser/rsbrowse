@@ -1,5 +1,6 @@
 use crate::analysis::{Analysis, CrateId, CrateType, ImplDetails};
 use rls_data::{Def, DefKind};
+use std::collections::hash_map::*;
 
 pub struct Browser {
     analysis: Analysis,
@@ -73,23 +74,29 @@ impl Browser {
                 let imp = self.analysis.get_impl(crate_id, impl_details.impl_id)
                     .expect("invalid impl ID");
 
-                // It appears that imp.children has the methods for an inherent impl (impl Foo), whereas
-                // the trait will have them if it is a trait impl. It doesn't look like it can be a mix.
-                // But go through the impl children anyway, just in case.
+                let mut methods = HashMap::new();
+
+                // imp.children has methods for inherent impls (impl Foo) and overrides of trait
+                // methods.
                 for id in &imp.children {
                     if let Some(method) = self.analysis.get_def(&crate_id, *id) {
-                        items.push((def_label(method), Item::Def(method.clone())));
+                        methods.insert(def_label(method), Item::Def(method.clone()));
                     }
                 }
+
+                // Trait methods.
                 if let Some(trait_id) = impl_details.trait_id {
                     let def = self.analysis.get_def(&crate_id, trait_id).expect("no such trait");
                     for id in &def.children {
                         if let Some(method) = self.analysis.get_def(&crate_id, *id) {
-                            items.push((def_label(method), Item::Def(method.clone())));
+                            // Add to the map only if not existing (if it already exists it means
+                            // the method has been overridden).
+                            methods.entry(def_label(method)).or_insert(Item::Def(method.clone()));
                         }
                     }
                 }
 
+                items.extend(methods.into_iter());
                 sort_by_label(&mut items);
             }
         }

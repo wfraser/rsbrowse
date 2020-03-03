@@ -76,6 +76,19 @@ fn items_eq(a: &Item, b: &Item) -> bool {
     }
 }
 
+trait ItemExt {
+    fn unwrap_def(&self) -> &rls_data::Def;
+}
+
+impl ItemExt for Item {
+    fn unwrap_def(&self) -> &rls_data::Def {
+        match self {
+            Item::Def(def) => def,
+            _ => panic!("not an Item::Def"),
+        }
+    }
+}
+
 #[test]
 fn it_loads() {
     let _force_it_to_load = &BROWSER;
@@ -155,31 +168,17 @@ fn list_items() {
 
     let y_s_trait = y_s_items.by_label("impl ::Trait");
     let y_s_trait_items = BROWSER.list_items(crate_id, y_s_trait);
-    // This is WRONG but describes current behavior.
-    // It has items for both the implementation provided in the trait, as well as the one in the
-    // impl specific to S, which overrides the other one.
-    assert_eq!(y_s_trait_items.labels(), &["fn method", "fn method"]);
+    assert_eq!(y_s_trait_items.labels(), &["fn method"]);
+
+    // It has to be the overridden one, not the default on the trait (which is "::Trait::method").
+    assert_eq!(y_s_trait_items[0].1.unwrap_def().qualname, "<S as Trait>::method");
 
     let z_s_trait = z_s_items.by_label("impl ::Trait");
     let z_s_trait_items = BROWSER.list_items(crate_id, z_s_trait);
-    // This one inherits the default, so it only has one.
     assert_eq!(z_s_trait_items.labels(), &["fn method"]);
 
-    // One of the two <y::S as Trait>::method should be the same as <z::S as Trait>::method
-    // FIXME: remove extra check when bug is fixed
-    assert!(
-        items_eq(
-            &y_s_trait_items[0].1,
-            &z_s_trait_items[0].1,
-        )
-        || items_eq(
-            &y_s_trait_items[1].1,
-            &z_s_trait_items[0].1,
-        ));
-
-    // But the two <y::S as Trait>::method should not be the same as each other. (FIXME: remove
-    // when bug is fixed)
-    assert!(!items_eq(&y_s_trait_items[0].1, &y_s_trait_items[1].1));
+    // This one inherits the default.
+    assert_eq!(z_s_trait_items[0].1.unwrap_def().qualname, "::Trait::method");
 
     // Pane 5 (all empty)
     for stuff in &[&x_s_self_items, &y_s_self_items, &y_s_trait_items, &z_s_trait_items] {
