@@ -99,11 +99,6 @@ fn add_panel(ui: &mut Cursive, crate_id: CrateId, parent: &Item, depth: usize) {
                     .show_scrollbars(true)
             );
         }
-
-        // If this is the first one, we were called from pressing Enter, so focus it.
-        if depth == 1 {
-            horiz_layout.set_focus_index(1).unwrap();
-        }
     });
 }
 
@@ -130,7 +125,7 @@ pub fn run(browser: Browser) {
     // TODO: implement a better live search than this
     crates_select.set_autojump(true);
 
-    crates_select.set_on_submit(|ui, crate_id| {
+    crates_select.set_on_select(|ui, crate_id| {
         add_panel(ui, crate_id.clone(), &Item::Root, 1);
     });
 
