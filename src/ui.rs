@@ -10,6 +10,8 @@ struct UserData {
     browser: Browser,
 }
 
+/// Makes a selectview showing the children of the given parent item in the given crate.
+/// Returns None if there are no children to display.
 fn make_selectview(data: &mut UserData, crate_id: CrateId, parent: &Item, depth: usize)
     -> Option<views::SelectView<Item>>
 {

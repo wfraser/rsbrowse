@@ -91,7 +91,7 @@ impl Browser {
                         if let Some(method) = self.analysis.get_def(&crate_id, *id) {
                             // Add to the map only if not existing (if it already exists it means
                             // the method has been overridden).
-                            methods.entry(def_label(method)).or_insert(Item::Def(method.clone()));
+                            methods.entry(def_label(method)).or_insert_with(|| Item::Def(method.clone()));
                         }
                     }
                 }
@@ -169,6 +169,7 @@ fn def_label(def: &Def) -> String {
     format!("{} {}", prefix, def.name)
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum Item {
     Root,
