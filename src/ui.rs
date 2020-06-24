@@ -59,34 +59,23 @@ fn add_panel(ui: &mut Cursive, crate_id: CrateId, parent: &Item, depth: usize) {
 
     let data: &mut UserData = ui.user_data().unwrap();
 
-    // Mega-hax here: instatiating the next pane is done when selection changes on the current pane.
-    // If the current pane only has one item, there's no way to change selection, and so no way to
-    // browse deeper within the tree. Ideally we'd just do this when focus between panes changes,
-    // but Cursive doesn't have any way for a view to respond to being focused, nor does its
-    // LinearLayout have a callback on switching views. So instead, if the view is going to have
-    // only one item, we go ahead and create the next view *right away*. This continues until we run
-    // out of stuff or have a pane with >1 item.
+    // Expand out all panes to the right, using the first item in each pane, until we run out of
+    // stuff to show.
+    // Ideally we wouldn't need to do this immediately and could instead do it on focus changes
+    // between panes, but Cursive doesn't have any way for a view to respond to being focused, nor
+    // does its LinearLayout have a callback on switching views.
+    // Importantly, it's not sufficient to just change things on selection change, because a pane
+    // with a single item can never have its selection changed, so you'd be stuck there unable to go
+    // deeper within the tree. So this is why we go ahead and create the next views *right away*.
     let mut next = vec![];
     let mut local_depth = depth;
     let mut local_parent = Cow::Borrowed(parent);
-    loop {
-        let view = match make_selectview(data, crate_id.clone(), &local_parent, local_depth) {
-            Some(view) => view,
-            None => break,
-        };
-
-        // Only one item in the view; continue to loop, using the single item in this view as the
-        // parent for the next pane.
-        if view.len() == 1 {
-            if let Some((_label, item)) = view.get_item(0) {
-                local_depth += 1;
-                local_parent = Cow::Owned(item.clone());
-            }
-            next.push(view);
-        } else {
-            next.push(view);
-            break;
+    while let Some(view) = make_selectview(data, crate_id.clone(), &local_parent, local_depth) {
+        if let Some((_label, item)) = view.get_item(0) {
+            local_depth += 1;
+            local_parent = Cow::Owned(item.clone());
         }
+        next.push(view);
     }
 
     if next.is_empty() {
@@ -124,6 +113,8 @@ pub fn run(browser: Browser) {
         crates_select.add_item(label, crate_id);
     }
 
+    let first_crate = crates_select.get_item(0).map(|(_label, crate_id)| crate_id.clone());
+
     // TODO: implement a better live search than this
     crates_select.set_autojump(true);
 
@@ -144,5 +135,11 @@ pub fn run(browser: Browser) {
     );
 
     ui.set_user_data(UserData { browser });
+
+    // Go ahead and expand the first crate in the list immediately.
+    if let Some(crate_id) = first_crate {
+        add_panel(&mut ui, crate_id, &Item::Root, 1);
+    }
+
     ui.run();
 }
