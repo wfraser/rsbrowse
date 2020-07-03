@@ -2,6 +2,9 @@ use rls_analysis::{AnalysisHost, AnalysisLoader, SearchDirectory};
 use std::convert::TryFrom;
 use std::path::{Path, PathBuf};
 
+/// Write the analysis data to a subdirectory under target/ with this name.
+const SUBDIR: &str = "rsbrowse";
+
 pub struct Analysis {
     pub crates: Vec<Crate>,
 }
@@ -22,6 +25,8 @@ impl Analysis {
 
         let cargo_status = std::process::Command::new("cargo")
             .arg("check")
+            .arg("--target-dir")
+            .arg(Path::new("target").join(SUBDIR))
             .env("RUSTFLAGS", "-Z save-analysis")
             .env("RUST_SAVE_ANALYSIS_CONFIG", &config_json)
             .current_dir(workspace_path)
@@ -261,6 +266,7 @@ impl Loader {
         Self {
             deps_dir: path.into()
                 .join("target")
+                .join(SUBDIR)
                 .join(target)
                 .join("deps")
                 .join("save-analysis"),
