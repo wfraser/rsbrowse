@@ -1,9 +1,10 @@
 use cursive::Cursive;
 use cursive::event::Key;
-use cursive::views;
 use cursive::traits::*;
+use cursive::views::{Dialog, LinearLayout, ScrollView, SelectView, TextView};
 use crate::analysis::CrateId;
 use crate::browser::{Browser, Item};
+use crate::scroll_pad::ScrollPad;
 use std::borrow::Cow;
 
 struct UserData {
@@ -13,14 +14,14 @@ struct UserData {
 /// Makes a selectview showing the children of the given parent item in the given crate.
 /// Returns None if there are no children to display.
 fn make_selectview(data: &mut UserData, crate_id: CrateId, parent: &Item, depth: usize)
-    -> Option<views::SelectView<Item>>
+    -> Option<SelectView<Item>>
 {
     let items = data.browser.list_items(&crate_id, parent);
     if items.is_empty() {
         return None;
     }
 
-    let mut select = views::SelectView::new();
+    let mut select = SelectView::new();
     for (label, item) in items {
         select.add_item(label, item);
     }
@@ -30,12 +31,12 @@ fn make_selectview(data: &mut UserData, crate_id: CrateId, parent: &Item, depth:
         let data = ui.user_data::<UserData>().unwrap();
         let txt = data.browser.get_debug_info(&crate_id2, item);
         ui.add_layer(
-            views::Dialog::around(
-                views::ScrollView::new(
-                    views::TextView::new(txt)
-                    )
-                    .scroll_y(true)
+            Dialog::around(
+                ScrollView::new(
+                    TextView::new(txt)
                 )
+                    .scroll_y(true)
+            )
                 .dismiss_button("ok")
         );
     });
@@ -51,7 +52,7 @@ fn make_selectview(data: &mut UserData, crate_id: CrateId, parent: &Item, depth:
 }
 
 fn add_panel(ui: &mut Cursive, crate_id: CrateId, parent: &Item, depth: usize) {
-    ui.call_on_name("horiz_layout", |view: &mut views::LinearLayout| {
+    ui.call_on_name("horiz_layout", |view: &mut LinearLayout| {
         while view.len() > depth {
             view.remove_child(view.len() - 1);
         }
@@ -82,12 +83,14 @@ fn add_panel(ui: &mut Cursive, crate_id: CrateId, parent: &Item, depth: usize) {
         return;
     }
 
-    ui.call_on_name("horiz_layout", |horiz_layout: &mut views::LinearLayout| {
+    ui.call_on_name("horiz_layout", |horiz_layout: &mut LinearLayout| {
         for view in next {
             horiz_layout.add_child(
-                views::ScrollView::new(view)
-                    .scroll_y(true)
-                    .show_scrollbars(true)
+                ScrollPad::new(
+                    ScrollView::new(view)
+                        .scroll_y(true)
+                        .show_scrollbars(true)
+                )
             );
         }
     });
@@ -108,7 +111,7 @@ pub fn run(browser: Browser) {
 
     ui.add_global_callback(Key::Esc, |ui| ui.quit());
 
-    let mut crates_select = views::SelectView::new();
+    let mut crates_select = SelectView::new();
     for (label, crate_id) in browser.list_crates() {
         crates_select.add_item(label, crate_id);
     }
@@ -123,11 +126,13 @@ pub fn run(browser: Browser) {
     });
 
     ui.add_fullscreen_layer(
-        views::ScrollView::new(
-            views::LinearLayout::horizontal()
+        ScrollView::new(
+            LinearLayout::horizontal()
                 .child(
-                    views::ScrollView::new(crates_select)
-                        .scroll_y(true)
+                    ScrollPad::new(
+                        ScrollView::new(crates_select)
+                            .scroll_y(true)
+                    )
                 )
                 .with_name("horiz_layout")
             )

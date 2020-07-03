@@ -5,7 +5,6 @@
 * format the label of functions to include the signature
     * probably will invole string munging, sticking the `.name` into the the `.value` of the def in the right spot
 * handle impls of traits defined in other crates
-* when there's no scrollbar, there should still be 1 column of spacing between panes
 * make the color scheme less ugly
 * implement some form of live search, where you can start typing and rsbrowse selects the thing
     * initially, within the current pane would be a nice start
