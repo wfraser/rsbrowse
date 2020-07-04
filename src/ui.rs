@@ -1,4 +1,4 @@
-use cursive::Cursive;
+use cursive::{Cursive, XY};
 use cursive::event::Key;
 use cursive::traits::*;
 use cursive::views::{Dialog, LinearLayout, ScrollView, SelectView, TextView};
@@ -29,16 +29,41 @@ fn make_selectview(data: &mut UserData, crate_id: CrateId, parent: &Item, depth:
     let crate_id2 = crate_id.clone();
     select.set_on_submit(move |ui, item| {
         let data = ui.user_data::<UserData>().unwrap();
-        let txt = data.browser.get_debug_info(&crate_id2, item);
-        ui.add_layer(
-            Dialog::around(
-                ScrollView::new(
-                    TextView::new(txt)
-                )
-                    .scroll_y(true)
+
+        let info_txt = data.browser.get_info(&crate_id2, item);
+        let (source_txt, span) = get_source(item);
+
+        let crate_id_dlg = crate_id2.clone();
+        let item_dlg = item.clone();
+        let info_dialog = Dialog::around(
+            LinearLayout::vertical()
+                .child(TextView::new(info_txt).scrollable())
+                .child(TextView::new(source_txt)
+                    .scrollable()
+                    .with_name("source_scroll"))
+                .scrollable()
             )
-                .dismiss_button("ok")
-        );
+            .dismiss_button("ok")
+            .button("debug", move |ui| {
+                let data = ui.user_data::<UserData>().unwrap();
+                let dbg_txt = data.browser.get_debug_info(&crate_id_dlg, &item_dlg);
+                let dbg_dialog = Dialog::around(
+                    TextView::new(dbg_txt)
+                        .scrollable()
+                    )
+                    .dismiss_button("ok");
+                ui.add_layer(dbg_dialog);
+            });
+
+        ui.add_layer(info_dialog);
+
+        if let Some(span) = span {
+            ui.refresh(); // Need to force a layout before we can do a scroll.
+            ui.call_on_name("source_scroll", move |view: &mut ScrollView<TextView>| {
+                view.set_offset(XY::new(0, (span.line_start.0 - 1) as usize));
+            });
+        }
+
     });
 
     select.set_on_select(move |ui, item| {
@@ -49,6 +74,34 @@ fn make_selectview(data: &mut UserData, crate_id: CrateId, parent: &Item, depth:
     });
 
     Some(select)
+}
+
+fn get_source(item: &Item) -> (String, Option<rls_data::SpanData>) {
+    use std::fs::File;
+    use std::io::{BufRead, BufReader};
+    let mut txt = String::new();
+    match item {
+        Item::Def(def) => {
+            match File::open(&def.span.file_name) {
+                Ok(f) => {
+                    for (i, line) in BufReader::new(f)
+                        .lines()
+                        .enumerate()
+                    {
+                        txt += &format!("{}: ", i + 1);
+                        txt += &line.unwrap_or_else(|e| format!("<Read Error: {}>", e));
+                        txt.push('\n');
+                    }
+                }
+                Err(e) => {
+                    txt += &format!("error opening source: {}", e);
+                }
+            }
+            return (txt, Some(def.span.clone()))
+        }
+        _ => txt += &format!("source listing unimplemented for {:?}", item),
+    }
+    (txt, None)
 }
 
 fn add_panel(ui: &mut Cursive, crate_id: CrateId, parent: &Item, depth: usize) {

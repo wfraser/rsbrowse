@@ -104,6 +104,33 @@ impl Browser {
         items
     }
 
+    pub fn get_info(&self, crate_id: &CrateId, item: &Item) -> String {
+        let mut txt = String::new();
+        match item {
+            Item::Def(def) => {
+                if !def.docs.is_empty() {
+                    txt += &def.docs;
+                    txt.push('\n');
+                }
+                txt += &format!("defined in {:?}\nstarting on line {}",
+                    def.span.file_name,
+                    def.span.line_start.0);
+            }
+            Item::Impl(d) => {
+                txt += &format!("it's an impl: {:?}\n", d);
+                let imp = self.analysis.get_impl(crate_id, d.impl_id).unwrap();
+                txt += &format!("impl: {:?}\n", imp);
+                txt += &format!("defined in {:?}\nstarting on line {}",
+                    d.span.file_name,
+                    d.span.line_start.0);
+            }
+            Item::Root => {
+                txt += &format!("crate root of {:?}", crate_id);
+            }
+        }
+        txt
+    }
+
     pub fn get_debug_info(&self, crate_id: &CrateId, item: &Item) -> String {
         let mut txt = format!("{:#?}", item);
         match item {
@@ -159,9 +186,9 @@ fn def_label(def: &Def) -> String {
         DefKind::Macro => "macro",
         DefKind::Type => "type",
         DefKind::ExternType => "extern type",
-        DefKind::Const => "const",
-        DefKind::Static => "static",
-        DefKind::ForeignStatic => "extern static",
+        DefKind::Const => return format!("const {}: {}", def.name, def.value),
+        DefKind::Static => return format!("static {}: {}", def.name, def.value),
+        DefKind::ForeignStatic => return format!("extern static {}: {}", def.name, def.value),
         DefKind::TupleVariant | DefKind::StructVariant => return def.value.clone(),
         DefKind::Field => return format!("{}: {}", def.name, def.value),
         DefKind::Local => "local", // or should we return None?

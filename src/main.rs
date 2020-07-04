@@ -34,6 +34,8 @@ fn main() {
     eprintln!("Reading analysis data...");
     let analysis = Analysis::load(&args.workspace_path);
 
+    std::env::set_current_dir(&args.workspace_path).unwrap();
+
     let browser = Browser::new(analysis);
     ui::run(browser);
 }

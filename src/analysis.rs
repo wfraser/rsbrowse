@@ -18,7 +18,7 @@ impl Analysis {
                 pub_only: false,        // this should be controlled by cmdline args or something
                 reachable_only: false,  // this should be controlled by cmdline args or something
                 distro_crate: false,
-                signatures: false, // this seems to be busted
+                signatures: false, // this causes rustc to ICE...
                 borrow_data: false,
             })
             .expect("failed to json-serialize rust analysis configuration");
