@@ -1,4 +1,4 @@
-use cursive::{Cursive, XY};
+use cursive::{Cursive, CursiveExt, XY};
 use cursive::event::Key;
 use cursive::traits::*;
 use cursive::views::{Dialog, LinearLayout, ScrollView, SelectView, TextView};
