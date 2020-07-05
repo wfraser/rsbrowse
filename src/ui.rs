@@ -7,6 +7,9 @@ use crate::browser::{Browser, Item};
 use crate::scroll_pad::ScrollPad;
 use std::borrow::Cow;
 
+/// How many lines to scroll to before a definition.
+const SOURCE_LEADING_CONTEXT_LINES: usize = 5;
+
 struct UserData {
     browser: Browser,
 }
@@ -31,7 +34,7 @@ fn make_selectview(data: &mut UserData, crate_id: CrateId, parent: &Item, depth:
         let data = ui.user_data::<UserData>().unwrap();
 
         let info_txt = data.browser.get_info(&crate_id2, item);
-        let (source_txt, span) = get_source(item);
+        let (source_txt, start_line) = get_source(item);
 
         let crate_id_dlg = crate_id2.clone();
         let item_dlg = item.clone();
@@ -57,10 +60,13 @@ fn make_selectview(data: &mut UserData, crate_id: CrateId, parent: &Item, depth:
 
         ui.add_layer(info_dialog);
 
-        if let Some(span) = span {
+        if let Some(start_line) = start_line {
             ui.refresh(); // Need to force a layout before we can do a scroll.
             ui.call_on_name("source_scroll", move |view: &mut ScrollView<TextView>| {
-                view.set_offset(XY::new(0, (span.line_start.0 - 1) as usize));
+                view.set_offset(
+                    XY::new(
+                        0,
+                        start_line.saturating_sub(SOURCE_LEADING_CONTEXT_LINES)));
             });
         }
 
@@ -76,14 +82,14 @@ fn make_selectview(data: &mut UserData, crate_id: CrateId, parent: &Item, depth:
     Some(select)
 }
 
-fn get_source(item: &Item) -> (String, Option<rls_data::SpanData>) {
+fn get_source(item: &Item) -> (String, Option<usize>) {
     use std::fs::File;
     use std::io::{BufRead, BufReader};
-    let mut txt = String::new();
     match item {
         Item::Def(def) => {
             match File::open(&def.span.file_name) {
                 Ok(f) => {
+                    let mut txt = String::new();
                     for (i, line) in BufReader::new(f)
                         .lines()
                         .enumerate()
@@ -92,16 +98,21 @@ fn get_source(item: &Item) -> (String, Option<rls_data::SpanData>) {
                         txt += &line.unwrap_or_else(|e| format!("<Read Error: {}>", e));
                         txt.push('\n');
                     }
+                    let mut line = def.span.line_start.0 - 1;
+                    for attr in &def.attributes {
+                        // Set start line to the first of any of its attributes. This way we include
+                        // any preceeding doc comments.
+                        line = line.min(attr.span.line_start.0 - 1);
+                    }
+                    (txt, Some(line as usize))
                 }
                 Err(e) => {
-                    txt += &format!("error opening source: {}", e);
+                    return (format!("error opening source: {}", e), None);
                 }
             }
-            return (txt, Some(def.span.clone()))
         }
-        _ => txt += &format!("source listing unimplemented for {:?}", item),
+        _ => (format!("source listing unimplemented for {:?}", item), None),
     }
-    (txt, None)
 }
 
 fn add_panel(ui: &mut Cursive, crate_id: CrateId, parent: &Item, depth: usize) {
