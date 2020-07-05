@@ -160,20 +160,36 @@ fn add_panel(ui: &mut Cursive, crate_id: CrateId, parent: &Item, depth: usize) {
     });
 }
 
+fn about(ui: &mut Cursive) {
+    ui.add_layer(
+        Dialog::around(
+            TextView::new(
+                format!("rsbrowse/{}\n\
+                    {}{}by Bill Fraser\n\
+                    https://github.com/wfraser/rsbrowse",
+                    env!("CARGO_PKG_VERSION"),
+                    env!("GIT_COMMIT_HASH"),
+                    if env!("GIT_COMMIT_HASH").is_empty() { "" } else { "\n" },
+                    )
+                )
+                .h_align(cursive::align::HAlign::Center)
+            )
+            .title("about")
+            .dismiss_button("ok")
+        )
+}
+
 pub fn run(browser: Browser) {
     let mut ui = Cursive::default();
 
-    /*
     ui.menubar()
-        .add_leaf("rsbrowse!", |_|())
+        .add_leaf("rsbrowse!", about)
         .add_delimiter()
         .add_leaf("Quit", |ui| ui.quit())
         .add_leaf("(ESC to activate menu)", |_|());
     ui.set_autohide_menu(false);
     ui.add_global_callback(Key::Esc, |ui| ui.select_menubar());
-    */
-
-    ui.add_global_callback(Key::Esc, |ui| ui.quit());
+    //ui.add_global_callback(Key::Esc, |ui| ui.quit());
 
     ui.set_theme(
         cursive::theme::Theme::default()
