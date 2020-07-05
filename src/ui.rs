@@ -206,11 +206,11 @@ pub fn run(browser: Browser) {
             .with(|theme| {
                 use cursive::theme::{
                     BaseColor::{Black, White, Green},
-                    Color::{Light, Dark},
+                    Color::{Light, Dark, Rgb},
                     PaletteColor,
                 };
                 theme.palette[PaletteColor::Background] = Dark(Black);
-                theme.palette[PaletteColor::View] = Dark(Black);
+                theme.palette[PaletteColor::View] = Rgb(32,32,32);
                 theme.palette[PaletteColor::Shadow] = Light(Black);
                 theme.palette[PaletteColor::Primary] = Dark(White);
                 theme.palette[PaletteColor::Highlight] = Dark(Green);
