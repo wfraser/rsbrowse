@@ -116,13 +116,14 @@ impl Browser {
                     def.span.file_name,
                     def.span.line_start.0);
             }
-            Item::Impl(d) => {
-                txt += &format!("it's an impl: {:?}\n", d);
-                let imp = self.analysis.get_impl(crate_id, d.impl_id).unwrap();
-                txt += &format!("impl: {:?}\n", imp);
-                txt += &format!("defined in {:?}\nstarting on line {}",
-                    d.span.file_name,
-                    d.span.line_start.0);
+            Item::Impl(imp) => {
+                if let Some(t) = imp.trait_id {
+                    let tdef = self.analysis.get_def(crate_id, t).unwrap();
+                    txt += &format!("implementation of trait {}", tdef.qualname);
+                } else {
+                    txt += "inherent impl";
+                    // nothing else to show really
+                }
             }
             Item::Root => {
                 txt += &format!("crate root of {:?}", crate_id);
