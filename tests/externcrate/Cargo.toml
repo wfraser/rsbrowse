@@ -1,10 +1,9 @@
 [package]
-name = "testcrate"
+name = "externcrate"
 version = "0.1.0"
-authors = ["William R. Fraser <wfraser@codewise.org>"]
+authors = ["Bill Fraser <wfraser@codewise.org>"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-externcrate = { path = "../externcrate" }

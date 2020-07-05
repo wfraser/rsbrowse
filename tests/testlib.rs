@@ -63,6 +63,15 @@ fn items_eq(a: &Item, b: &Item) -> bool {
                 _ => false,
             }
         }
+        Item::ExternalDef(cr_a, a) => {
+            match b {
+                Item::ExternalDef(cr_b, b) => {
+                    cr_a.disambiguator == cr_b.disambiguator
+                        && a.id == b.id
+                }
+                _ => false,
+            }
+        }
         Item::Impl(a) => {
             match b {
                 Item::Impl(b) => {
@@ -92,7 +101,7 @@ impl ItemExt for Item {
 #[test]
 fn list_items() {
     let crates = BROWSER.list_crates();
-    assert_eq!(crates.labels(), &["testcrate", "testcrate (bin)"]);
+    assert_eq!(crates.labels(), &["externcrate", "testcrate", "testcrate (bin)"]);
 
     let crate_id = crates.by_label("testcrate");
 
@@ -136,7 +145,7 @@ fn list_items() {
 
     let x_s = mod_x_items.by_label("struct S");
     let x_s_items = BROWSER.list_items(crate_id, x_s);
-    assert_eq!(x_s_items.labels(), &["impl Self"]);
+    assert_eq!(x_s_items.labels(), &["impl Self", "impl externcrate::ExternTrait"]);
 
     let y_s = mod_y_items.by_label("struct S");
     let y_s_items = BROWSER.list_items(crate_id, y_s);
@@ -151,6 +160,13 @@ fn list_items() {
     let x_s_self = x_s_items.by_label("impl Self");
     let x_s_self_items = BROWSER.list_items(crate_id, x_s_self);
     assert_eq!(x_s_self_items.labels(), &["fn f"]);
+
+    let x_s_extern = x_s_items.by_label("impl externcrate::ExternTrait");
+    let x_s_extern_items = BROWSER.list_items(crate_id, x_s_extern);
+    assert_eq!(x_s_extern_items.labels(), &[
+        "fn default_method (externcrate)",
+        "fn required_method",
+    ]);
 
     let y_s_self = y_s_items.by_label("impl Self");
     let y_s_self_items = BROWSER.list_items(crate_id, y_s_self);

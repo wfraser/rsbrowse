@@ -85,7 +85,7 @@ fn info_dialog(ui: &mut Cursive, crate_id: &CrateId, item: &Item) {
 
 fn get_source(item: &Item) -> (String, Option<usize>) {
     match item {
-        Item::Def(def) => {
+        Item::Def(def) | Item::ExternalDef(_, def) => {
             let (txt, line) = get_source_for_def(def);
             (txt, Some(line))
         }

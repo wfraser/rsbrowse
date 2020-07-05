@@ -1,4 +1,5 @@
 use rls_analysis::{AnalysisHost, AnalysisLoader, SearchDirectory};
+use std::collections::btree_map::*;
 use std::convert::TryFrom;
 use std::path::{Path, PathBuf};
 
@@ -60,7 +61,13 @@ impl Analysis {
     }
 
     pub fn get_crate<'a>(&'a self, id: &CrateId) -> &'a Crate {
-        self.crates.iter().find(|c| c.matches_id(id)).as_ref().unwrap()
+        self.try_get_crate(id)
+            .unwrap_or_else(|| panic!("no analysis for crate \"{}\"", id.name))
+    }
+
+    pub fn try_get_crate<'a>(&'a self, id: &CrateId) -> Option<&'a Crate> {
+        self.crates.iter()
+            .find(|c| c.matches_id(id))
     }
 
     pub fn defs<'a>(&'a self, crate_id: &CrateId, parent_id: Option<rls_data::Id>)
@@ -91,6 +98,18 @@ impl Analysis {
     pub fn get_def<'a>(&'a self, crate_id: &CrateId, id: rls_data::Id)
         -> Option<&'a rls_data::Def>
     {
+        if id.krate != 0 {
+            // External definition. Switch to the defining crate and lookup there.
+            // WARNING: the returned def's IDs are all relative to the external crate, not the
+            // passed-in crate ID, so use with caution.
+            let ext_crate_id = self.get_external_crate_id(crate_id, id)?;
+            return self.get_def(
+                ext_crate_id,
+                rls_data::Id {
+                    krate: 0,
+                    index: id.index,
+                })
+        }
         self.get_crate(crate_id)
             .inner
             .analysis
@@ -138,6 +157,14 @@ impl Analysis {
             .iter()
             .find(|i| i.id == impl_id)
     }
+
+    pub fn get_external_crate_id<'a>(&'a self, crate_id: &CrateId, id: rls_data::Id)
+        -> Option<&'a CrateId>
+    {
+        self.get_crate(crate_id)
+            .external_crates
+            .get(&id.krate)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -152,6 +179,7 @@ pub struct ImplDetails {
 pub struct Crate {
     inner: rls_analysis::Crate,
     crate_type: CrateType,
+    external_crates: BTreeMap<u32, CrateId>,
 }
 
 impl Crate {
@@ -197,9 +225,20 @@ impl TryFrom<rls_analysis::Crate> for Crate {
                 return Err(format!("missing crate-type in analysis of crate {:?}", inner.id));
             }
         };
+        let external_crates = inner.analysis.prelude.as_ref()
+            .map(|p| &p.external_crates[..])
+            .unwrap_or(&[])
+            .iter()
+            .map(|ext| (ext.num, CrateId {
+                name: ext.id.name.clone(),
+                disambiguator: ext.id.disambiguator,
+                crate_type: CrateType::Lib,
+            }))
+            .collect();
         Ok(Self {
             inner,
             crate_type,
+            external_crates,
         })
     }
 }
