@@ -175,6 +175,22 @@ pub fn run(browser: Browser) {
 
     ui.add_global_callback(Key::Esc, |ui| ui.quit());
 
+    ui.set_theme(
+        cursive::theme::Theme::default()
+            .with(|theme| {
+                use cursive::theme::{
+                    BaseColor::{Black, White, Green},
+                    Color::{Light, Dark},
+                    PaletteColor,
+                };
+                theme.palette[PaletteColor::Background] = Dark(Black);
+                theme.palette[PaletteColor::View] = Dark(Black);
+                theme.palette[PaletteColor::Shadow] = Light(Black);
+                theme.palette[PaletteColor::Primary] = Dark(White);
+                theme.palette[PaletteColor::Highlight] = Dark(Green);
+            })
+        );
+
     let mut crates_select = SelectView::new();
     for (label, crate_id) in browser.list_crates() {
         crates_select.add_item(label, crate_id);
