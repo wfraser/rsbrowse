@@ -1,5 +1,11 @@
-# Bugs
-* ???
+# Limitations
+* Type aliases (`pub type Foo = Bar;`) and re-exports (`pub use foo::Bar`) are not shown.
+    * Unsure how to get them in the analysis data.
+* Visibility info (pub / pub(crate) / not pub / etc) is not shown.
+    * Probably not possible with current analysis data.
+    * Could maybe hack it by parsing the source code span and/or code around the span?
+* Types get shown with their canonical name (after resolving all aliases and re-exports) regardless of what the code called them. So you'll see lots of `impl core::...` when the code really wrote `impl std::...` because `std` re-exports lots of things from `core`.
+    * Probably not possible to fix this without parsing the source code.
 
 # Enhancements
 * format the label of functions to include the signature
@@ -8,6 +14,5 @@
     * initially, within the current pane would be a nice start
     * eventually, within the current crate is probably good enough
     * globally is probably a bad idea
-* show visibility info (pub / pub(crate) / not pub / etc)
-    * probably not possible with current RLS data
-    * could maybe hack it by parsing the source code span?
+    * let users hit F3 or something to continue to the next match
+* Allow some way to specify a particular rust toolchain / target. Currently we just run `rustc` and `cargo` and you get whatever the default is.
