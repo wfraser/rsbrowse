@@ -121,13 +121,12 @@ impl Analysis {
                     index: id.index,
                 })
         }
-        Some(self.try_get_crate(crate_id)?
+        self.try_get_crate(crate_id)?
             .inner
             .analysis
             .defs
             .iter()
             .find(|def| def.id == id)
-            .unwrap_or_else(|| panic!("invalid def ID {:?} for crate {:?}", id, crate_id)))
     }
 
     pub fn impls<'a>(&'a self, crate_id: &CrateId, parent_id: rls_data::Id)
