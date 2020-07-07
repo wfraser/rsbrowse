@@ -15,12 +15,31 @@ impl Browser {
 
     pub fn list_crates(&self) -> Vec<(String, CrateId)> {
         let mut crates = self.analysis.crate_ids()
+            .filter(|c| !self.analysis.stdlib_crates.contains(c))
             .map(|c| (crate_label(&c), c))
             .collect::<Vec<_>>();
 
         sort_by_label(&mut crates);
 
         crates
+    }
+
+    fn get_maybe_external_trait<'a>(&'a self, crate_id: &'a CrateId, trait_id: rls_data::Id)
+        -> (bool, &'a CrateId, rls_data::Id)
+    {
+        if trait_id.krate != 0 {
+            (
+                true,
+                self.analysis.get_external_crate_id(crate_id, trait_id)
+                    .expect("nonexistent external crate"),
+                rls_data::Id {
+                    krate: 0,
+                    index: trait_id.index,
+                }
+            )
+        } else {
+            (false, crate_id, trait_id)
+        }
     }
 
     pub fn list_items(&self, crate_id: &CrateId, parent: &Item) -> Vec<(String, Item)> {
@@ -41,36 +60,27 @@ impl Browser {
 
                 if let Some(id) = parent_id {
                     let mut impls = self.analysis.impls(crate_id, id)
-                        .filter_map(|impl_details| {
+                        .map(|impl_details| {
                             let trait_name = match impl_details.trait_id {
-                                Some(mut trait_id) => {
-                                    let mut trait_crate = crate_id;
-                                    let mut is_external_crate = false;
-                                    if trait_id.krate != parent_id.unwrap().krate {
-                                        let other = self.analysis.get_external_crate_id(crate_id, trait_id)
-                                            .expect("nonexistent external crate");
-                                        trait_id.krate = 0; // now we're looking inside this one
-                                        trait_crate = other;
-                                        is_external_crate = true;
-                                    }
-                                    if self.analysis.try_get_crate(trait_crate).is_none() {
-                                        // Probably a reference to a trait in core or std, which we
-                                        // currently don't have a way to load analysis data for.
-                                        return None;
-                                    }
-                                    let trait_name = self.analysis.get_def(trait_crate, trait_id)
-                                        .expect("invalid trait ID")
-                                        .qualname
-                                        .clone();
-                                    if is_external_crate {
-                                        trait_crate.name.clone() + &trait_name
-                                    } else {
-                                        trait_name
-                                    }
+                                Some(trait_id) => {
+                                    let (is_external, trait_crate, trait_id)
+                                        = self.get_maybe_external_trait(crate_id, trait_id);
+                                    self.analysis.get_def(trait_crate, trait_id)
+                                        .map(|t| if is_external {
+                                            trait_crate.name.clone() + &t.qualname
+                                        } else {
+                                            t.qualname.clone()
+                                        })
+                                        .unwrap_or_else(|| {
+                                            format!("{}::(unresolved trait at {}:{})",
+                                                trait_crate.name,
+                                                impl_details.span.file_name.display(),
+                                                impl_details.span.line_start.0)
+                                        })
                                 }
                                 None => "Self".to_owned(),
                             };
-                            Some((format!("impl {}", trait_name), Item::Impl(impl_details)))
+                            (format!("impl {}", trait_name), Item::Impl(impl_details))
                         })
                         .collect::<Vec<_>>();
 
@@ -94,27 +104,22 @@ impl Browser {
                 }
 
                 // Trait methods.
-                if let Some(mut trait_id) = impl_details.trait_id {
-                    let mut trait_crate_id = crate_id;
-                    let mut is_external = false;
-                    if trait_id.krate != 0 {
-                        trait_crate_id = self.analysis.get_external_crate_id(crate_id, trait_id)
-                            .expect("nonexistent external crate");
-                        trait_id.krate = 0;
-                        is_external = true;
-                    }
+                if let Some(trait_id) = impl_details.trait_id {
+                    let (is_external, trait_crate, trait_id) = self.get_maybe_external_trait(
+                        crate_id, trait_id);
 
-                    let def = self.analysis.get_def(&trait_crate_id, trait_id)
-                        .expect("no such trait");
+                    let children = self.analysis.get_def(&trait_crate, trait_id)
+                        .map(|def| &def.children[..])
+                        .unwrap_or(&[]);
 
-                    for id in &def.children {
-                        if let Some(method) = self.analysis.get_def(&trait_crate_id, *id) {
+                    for id in children {
+                        if let Some(method) = self.analysis.get_def(&trait_crate, *id) {
                             // Add to the map only if not existing (if it already exists it means
                             // the method has been overridden).
                             methods.entry(def_label(method))
                                 .or_insert_with(|| {
                                     if is_external {
-                                        Item::ExternalDef(trait_crate_id.to_owned(), method.clone())
+                                        Item::ExternalDef(trait_crate.to_owned(), method.clone())
                                     } else {
                                         Item::Def(method.clone())
                                     }
@@ -159,8 +164,11 @@ impl Browser {
             }
             Item::Impl(imp) => {
                 if let Some(t) = imp.trait_id {
-                    let tdef = self.analysis.get_def(crate_id, t).unwrap();
-                    txt += &format!("implementation of trait {}", tdef.qualname);
+                    if let Some(tdef) = self.analysis.get_def(crate_id, t) {
+                        txt += &format!("implementation of trait {}", tdef.qualname);
+                    } else {
+                        txt += "implementation of unresolved trait";
+                    }
                 } else {
                     txt += "inherent impl";
                     // nothing else to show really
@@ -215,6 +223,7 @@ fn crate_label(c: &CrateId) -> String {
         CrateType::ProcMacro => format!("{} (proc-macro)", c.name),
         CrateType::Lib => c.name.clone(),
         CrateType::CDylib => format!("{} (cdylib)", c.name),
+        CrateType::Dylib => format!("{} (dylib)", c.name),
     }
 }
 

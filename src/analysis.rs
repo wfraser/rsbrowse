@@ -1,13 +1,16 @@
 use rls_analysis::{AnalysisHost, AnalysisLoader, SearchDirectory};
 use std::collections::btree_map::*;
 use std::convert::TryFrom;
+use std::io::{stderr, Write};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 /// Write the analysis data to a subdirectory under target/ with this name.
 const SUBDIR: &str = "rsbrowse";
 
 pub struct Analysis {
     pub crates: Vec<Crate>,
+    pub stdlib_crates: Vec<CrateId>,
 }
 
 impl Analysis {
@@ -24,7 +27,7 @@ impl Analysis {
             })
             .expect("failed to json-serialize rust analysis configuration");
 
-        let cargo_status = std::process::Command::new("cargo")
+        let cargo_status = Command::new("cargo")
             .arg("check")
             .arg("--target-dir")
             .arg(Path::new("target").join(SUBDIR))
@@ -51,8 +54,16 @@ impl Analysis {
                 &loader, Default::default(), &[] as &[&str])
             .into_iter()
             .map(|c| Crate::try_from(c).expect("unable to read crate analysis"))
-            .collect();
-        Self { crates }
+            .collect::<Vec<Crate>>();
+        let mut stdlib_crates = vec![];
+        if let Some(ref stdlib_base) = loader.stdlib_dir {
+            for krate in &crates {
+                if krate.inner.path.as_ref().unwrap().starts_with(stdlib_base) {
+                    stdlib_crates.push(krate.id());
+                }
+            }
+        }
+        Self { crates, stdlib_crates }
     }
 
     pub fn crate_ids<'a>(&'a self) -> impl Iterator<Item=CrateId> + 'a {
@@ -110,12 +121,13 @@ impl Analysis {
                     index: id.index,
                 })
         }
-        self.get_crate(crate_id)
+        Some(self.try_get_crate(crate_id)?
             .inner
             .analysis
             .defs
             .iter()
             .find(|def| def.id == id)
+            .unwrap_or_else(|| panic!("invalid def ID {:?} for crate {:?}", id, crate_id)))
     }
 
     pub fn impls<'a>(&'a self, crate_id: &CrateId, parent_id: rls_data::Id)
@@ -256,6 +268,7 @@ pub enum CrateType {
     Lib,
     ProcMacro,
     CDylib,
+    Dylib,
 }
 
 impl std::str::FromStr for CrateType {
@@ -266,6 +279,7 @@ impl std::str::FromStr for CrateType {
             "lib" => Self::Lib,
             "proc-macro" => Self::ProcMacro,
             "cdylib" => Self::CDylib,
+            "dylib" => Self::Dylib,
             _ => {
                 return Err(format!("unknown crate type {:?}", s));
             }
@@ -276,6 +290,7 @@ impl std::str::FromStr for CrateType {
 #[derive(Clone)]
 struct Loader {
     deps_dir: PathBuf,
+    stdlib_dir: Option<PathBuf>,
 }
 
 impl AnalysisLoader for Loader {
@@ -296,19 +311,59 @@ impl AnalysisLoader for Loader {
     }
 
     fn search_directories(&self) -> Vec<SearchDirectory> {
-        vec![SearchDirectory { path : self.deps_dir.clone(), prefix_rewrite: None }]
+        let mut paths = vec![
+            SearchDirectory { path : self.deps_dir.clone(), prefix_rewrite: None }
+        ];
+        if let Some(path) = self.stdlib_dir.clone() {
+            paths.push(SearchDirectory { path, prefix_rewrite: None });
+        }
+        paths
     }
 }
 
 impl Loader {
     pub fn new(path: impl Into<PathBuf>, target: &str) -> Self {
+        let deps_dir = path.into()
+            .join("target")
+            .join(SUBDIR)
+            .join(target)
+            .join("deps")
+            .join("save-analysis");
+
         Self {
-            deps_dir: path.into()
-                .join("target")
-                .join(SUBDIR)
-                .join(target)
-                .join("deps")
-                .join("save-analysis"),
+            deps_dir,
+            stdlib_dir: get_stdlib_analysis_path(),
         }
     }
+}
+
+fn get_stdlib_analysis_path() -> Option<PathBuf> {
+    Command::new("rustc")
+        .arg("--print")
+        .arg("target-libdir")
+        .output()
+        .map_err(|e| {
+            eprintln!("Error running 'rustc --print target-libdir': {}", e);
+            e
+        })
+        .ok()
+        .and_then(|out| {
+            if out.status.success() {
+                let path = String::from_utf8(out.stdout)
+                    .map_err(|e| {
+                        eprintln!("'rustc --print target-libdir' returned invalid utf8: {}", e);
+                        e
+                    })
+                    .ok()?;
+
+                Some(PathBuf::from(path.trim_end())
+                    .join("..")
+                    .join("analysis"))
+            } else {
+                eprintln!("Error running 'rustc --print target-libdir': {}", out.status);
+                eprint!("Command stderr: ");
+                stderr().write_all(&out.stderr).unwrap();
+                None
+            }
+        })
 }

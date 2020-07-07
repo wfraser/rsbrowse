@@ -145,7 +145,11 @@ fn list_items() {
 
     let x_s = mod_x_items.by_label("struct S");
     let x_s_items = BROWSER.list_items(crate_id, x_s);
-    assert_eq!(x_s_items.labels(), &["impl Self", "impl externcrate::ExternTrait"]);
+    assert_eq!(x_s_items.labels(), &[
+        "impl Self",
+        "impl core::fmt::Display",
+        "impl externcrate::ExternTrait",
+    ]);
 
     let y_s = mod_y_items.by_label("struct S");
     let y_s_items = BROWSER.list_items(crate_id, y_s);

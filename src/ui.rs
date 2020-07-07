@@ -120,7 +120,7 @@ fn get_source_for_def(def: &rls_data::Def) -> (String, usize) {
             (txt, line as usize)
         }
         Err(e) => {
-            return (format!("error opening source: {}", e), 0);
+            (format!("error opening source: {}", e), 0)
         }
     }
 }
