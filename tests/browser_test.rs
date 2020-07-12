@@ -1,11 +1,12 @@
 #[macro_use] extern crate lazy_static;
 
 use rsbrowse::analysis::Analysis;
-use rsbrowse::browser::{Browser, Item};
+use rsbrowse::browser_rls::{RlsBrowser, Item};
+use rsbrowse::browser_trait::Browser;
 use std::path::Path;
 
 lazy_static! {
-    static ref BROWSER: Browser = {
+    static ref BROWSER: RlsBrowser = {
         let path = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/testcrate"));
 
         let status = std::process::Command::new("cargo")
@@ -18,7 +19,7 @@ lazy_static! {
         }
 
         Analysis::generate(&path).expect("Failed to generate analysis data.");
-        Browser::new(Analysis::load(&path))
+        RlsBrowser::new(Analysis::load(&path))
     };
 }
 

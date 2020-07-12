@@ -2,23 +2,25 @@ use cursive::{Cursive, CursiveExt, XY};
 use cursive::event::Key;
 use cursive::traits::*;
 use cursive::views::{Dialog, LinearLayout, ScrollView, SelectView, TextView};
-use crate::analysis::CrateId;
-use crate::browser::{Browser, Item};
+use crate::browser_trait::{Browser, Item};
 use crate::scroll_pad::ScrollPad;
 use std::borrow::Cow;
 
 /// How many lines to scroll to before a definition.
 const SOURCE_LEADING_CONTEXT_LINES: usize = 5;
 
-struct UserData {
-    browser: Browser,
+struct UserData<B: Browser> {
+    browser: B,
 }
 
 /// Makes a selectview showing the children of the given parent item in the given crate.
 /// Returns None if there are no children to display.
-fn make_selectview(data: &mut UserData, crate_id: CrateId, parent: &Item, depth: usize)
-    -> Option<SelectView<Item>>
-{
+fn make_selectview<B: Browser + 'static>(
+    data: &mut UserData<B>,
+    crate_id: B::CrateId,
+    parent: &B::Item,
+    depth: usize,
+) -> Option<SelectView<B::Item>> {
     let items = data.browser.list_items(&crate_id, parent);
     if items.is_empty() {
         return None;
@@ -30,23 +32,20 @@ fn make_selectview(data: &mut UserData, crate_id: CrateId, parent: &Item, depth:
     }
 
     let crate_id2 = crate_id.clone();
-    select.set_on_submit(move |ui, item| info_dialog(ui, &crate_id2, item));
+    select.set_on_submit(move |ui, item| info_dialog::<B>(ui, &crate_id2, item));
 
     select.set_on_select(move |ui, item| {
-        if let Item::Root = item {
-            return;
-        }
-        add_panel(ui, crate_id.clone(), item, depth + 1);
+        add_panel::<B>(ui, crate_id.clone(), item, depth + 1);
     });
 
     Some(select)
 }
 
-fn info_dialog(ui: &mut Cursive, crate_id: &CrateId, item: &Item) {
-    let data = ui.user_data::<UserData>().unwrap();
+fn info_dialog<B: Browser + 'static>(ui: &mut Cursive, crate_id: &B::CrateId, item: &B::Item) {
+    let data = ui.user_data::<UserData<B>>().unwrap();
 
     let info_txt = data.browser.get_info(crate_id, item);
-    let (source_txt, start_line) = get_source(item);
+    let (source_txt, start_line) = data.browser.get_source(item);
 
     let crate_id_dlg = crate_id.clone();
     let item_dlg = item.clone();
@@ -60,7 +59,7 @@ fn info_dialog(ui: &mut Cursive, crate_id: &CrateId, item: &Item) {
         )
         .dismiss_button("ok")
         .button("debug", move |ui| {
-            let data = ui.user_data::<UserData>().unwrap();
+            let data = ui.user_data::<UserData<B>>().unwrap();
             let dbg_txt = data.browser.get_debug_info(&crate_id_dlg, &item_dlg);
             let dbg_dialog = Dialog::around(
                 TextView::new(dbg_txt)
@@ -83,56 +82,19 @@ fn info_dialog(ui: &mut Cursive, crate_id: &CrateId, item: &Item) {
     }
 }
 
-fn get_source(item: &Item) -> (String, Option<usize>) {
-    match item {
-        Item::Def(def) | Item::ExternalDef(_, def) => {
-            let (txt, line) = get_source_for_def(def);
-            (txt, Some(line))
-        }
-        Item::Impl(imp) => {
-            let id = imp.trait_id.unwrap_or(imp.impl_on);
-            (format!("source listing unimplemented for impls. impl ID = {:?}", id), None)
-        }
-        Item::Root => (String::new(), None),
-    }
-}
-
-fn get_source_for_def(def: &rls_data::Def) -> (String, usize) {
-    use std::fs::File;
-    use std::io::{BufRead, BufReader};
-    match File::open(&def.span.file_name) {
-        Ok(f) => {
-            let mut txt = String::new();
-            for (i, line) in BufReader::new(f)
-                .lines()
-                .enumerate()
-            {
-                txt += &format!("{}: ", i + 1);
-                txt += &line.unwrap_or_else(|e| format!("<Read Error: {}>", e));
-                txt.push('\n');
-            }
-            let mut line = def.span.line_start.0 - 1;
-            for attr in &def.attributes {
-                // Set start line to the first of any of its attributes. This way we include
-                // any preceeding doc comments.
-                line = line.min(attr.span.line_start.0 - 1);
-            }
-            (txt, line as usize)
-        }
-        Err(e) => {
-            (format!("error opening source: {}", e), 0)
-        }
-    }
-}
-
-fn add_panel(ui: &mut Cursive, crate_id: CrateId, parent: &Item, depth: usize) {
+fn add_panel<B: Browser + 'static>(
+    ui: &mut Cursive,
+    crate_id: B::CrateId,
+    parent: &B::Item,
+    depth: usize,
+) {
     ui.call_on_name("horiz_layout", |view: &mut LinearLayout| {
         while view.len() > depth {
             view.remove_child(view.len() - 1);
         }
     });
 
-    let data: &mut UserData = ui.user_data().unwrap();
+    let data: &mut UserData<B> = ui.user_data().unwrap();
 
     // Expand out all panes to the right, using the first item in each pane, until we run out of
     // stuff to show.
@@ -140,8 +102,9 @@ fn add_panel(ui: &mut Cursive, crate_id: CrateId, parent: &Item, depth: usize) {
     // between panes, but Cursive doesn't have any way for a view to respond to being focused, nor
     // does its LinearLayout have a callback on switching views.
     // Importantly, it's not sufficient to just change things on selection change, because a pane
-    // with a single item can never have its selection changed, so you'd be stuck there unable to go
-    // deeper within the tree. So this is why we go ahead and create the next views *right away*.
+    // with a single item can never have its selection changed, so you'd be stuck there unable to
+    // go deeper within the tree. So this is why we go ahead and create the next views *right
+    // away*.
     let mut next = vec![];
     let mut local_depth = depth;
     let mut local_parent = Cow::Borrowed(parent);
@@ -189,7 +152,7 @@ fn about(ui: &mut Cursive) {
         )
 }
 
-pub fn run(browser: Browser) {
+pub fn run<B: Browser + 'static>(browser: B) {
     let mut ui = Cursive::default();
 
     ui.menubar()
@@ -228,7 +191,7 @@ pub fn run(browser: Browser) {
     crates_select.set_autojump(true);
 
     crates_select.set_on_select(|ui, crate_id| {
-        add_panel(ui, crate_id.clone(), &Item::Root, 1);
+        add_panel::<B>(ui, crate_id.clone(), &B::Item::crate_root(), 1);
     });
 
     ui.add_fullscreen_layer(
@@ -249,7 +212,7 @@ pub fn run(browser: Browser) {
 
     // Go ahead and expand the first crate in the list immediately.
     if let Some(crate_id) = first_crate {
-        add_panel(&mut ui, crate_id, &Item::Root, 1);
+        add_panel::<B>(&mut ui, crate_id, &B::Item::crate_root(), 1);
     }
 
     ui.run();

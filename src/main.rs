@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use rsbrowse::analysis::Analysis;
-use rsbrowse::browser::Browser;
+use rsbrowse::browser_rls::RlsBrowser;
 use rsbrowse::ui;
 
 struct Arguments {
@@ -36,6 +36,6 @@ fn main() {
 
     std::env::set_current_dir(&args.workspace_path).unwrap();
 
-    let browser = Browser::new(analysis);
+    let browser = RlsBrowser::new(analysis);
     ui::run(browser);
 }

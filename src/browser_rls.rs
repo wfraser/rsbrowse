@@ -1,27 +1,17 @@
 use crate::analysis::{Analysis, CrateId, CrateType, ImplDetails};
+use crate::browser_trait::{self, Browser};
 use rls_data::{Def, DefKind};
 use std::collections::hash_map::*;
 
-pub struct Browser {
+pub struct RlsBrowser {
     analysis: Analysis,
 }
 
-impl Browser {
+impl RlsBrowser {
     pub fn new(analysis: Analysis) -> Self {
         Self {
             analysis,
         }
-    }
-
-    pub fn list_crates(&self) -> Vec<(String, CrateId)> {
-        let mut crates = self.analysis.crate_ids()
-            .filter(|c| !self.analysis.stdlib_crates.contains(c))
-            .map(|c| (crate_label(&c), c))
-            .collect::<Vec<_>>();
-
-        sort_by_label(&mut crates);
-
-        crates
     }
 
     fn get_maybe_external_trait<'a>(&'a self, crate_id: &'a CrateId, trait_id: rls_data::Id)
@@ -41,8 +31,24 @@ impl Browser {
             (false, crate_id, trait_id)
         }
     }
+}
 
-    pub fn list_items(&self, crate_id: &CrateId, parent: &Item) -> Vec<(String, Item)> {
+impl Browser for RlsBrowser {
+    type CrateId = CrateId;
+    type Item = Item;
+
+    fn list_crates(&self) -> Vec<(String, CrateId)> {
+        let mut crates = self.analysis.crate_ids()
+            .filter(|c| !self.analysis.stdlib_crates.contains(c))
+            .map(|c| (crate_label(&c), c))
+            .collect::<Vec<_>>();
+
+        sort_by_label(&mut crates);
+
+        crates
+    }
+
+    fn list_items(&self, crate_id: &CrateId, parent: &Item) -> Vec<(String, Item)> {
         let mut items = vec![];
         match parent {
             Item::Root | Item::Def(_) => {
@@ -150,7 +156,7 @@ impl Browser {
         items
     }
 
-    pub fn get_info(&self, crate_id: &CrateId, item: &Item) -> String {
+    fn get_info(&self, crate_id: &CrateId, item: &Item) -> String {
         let mut txt = String::new();
         match item {
             Item::Def(def) | Item::ExternalDef(_, def) => {
@@ -181,7 +187,7 @@ impl Browser {
         txt
     }
 
-    pub fn get_debug_info(&self, crate_id: &CrateId, item: &Item) -> String {
+    fn get_debug_info(&self, crate_id: &CrateId, item: &Item) -> String {
         let mut txt = format!("{:#?}", item);
         let add_children = |txt: &mut String, crate_id, children: &[rls_data::Id]| {
             for child_id in children {
@@ -206,6 +212,48 @@ impl Browser {
             Item::Root => (),
         }
         txt
+    }
+
+    fn get_source(&self, item: &Item) -> (String, Option<usize>) {
+        match item {
+            Item::Def(def) | Item::ExternalDef(_, def) => {
+                let (txt, line) = get_source_for_def(def);
+                (txt, Some(line))
+            }
+            Item::Impl(imp) => {
+                let id = imp.trait_id.unwrap_or(imp.impl_on);
+                (format!("source listing unimplemented for impls. impl ID = {:?}", id), None)
+            }
+            Item::Root => (String::new(), None),
+        }
+    }
+}
+
+fn get_source_for_def(def: &rls_data::Def) -> (String, usize) {
+    use std::fs::File;
+    use std::io::{BufRead, BufReader};
+    match File::open(&def.span.file_name) {
+        Ok(f) => {
+            let mut txt = String::new();
+            for (i, line) in BufReader::new(f)
+                .lines()
+                .enumerate()
+            {
+                txt += &format!("{}: ", i + 1);
+                txt += &line.unwrap_or_else(|e| format!("<Read Error: {}>", e));
+                txt.push('\n');
+            }
+            let mut line = def.span.line_start.0 - 1;
+            for attr in &def.attributes {
+                // Set start line to the first of any of its attributes. This way we include
+                // any preceding doc comments.
+                line = line.min(attr.span.line_start.0 - 1);
+            }
+            (txt, line as usize)
+        }
+        Err(e) => {
+            (format!("Error opening source: {}", e), 0)
+        }
     }
 }
 
@@ -257,4 +305,10 @@ pub enum Item {
     Def(rls_data::Def),
     ExternalDef(CrateId, rls_data::Def),
     Impl(ImplDetails),
+}
+
+impl browser_trait::Item for Item {
+    fn crate_root() -> Self {
+        Item::Root
+    }
 }
