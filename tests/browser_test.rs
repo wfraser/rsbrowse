@@ -23,8 +23,8 @@ lazy_static! {
     };
 }
 
-fn iter_labels<'a, T>(vec: &'a Vec<(String, T)>) -> impl Iterator<Item=&'a str> {
-    vec.iter().map(|(label, _)| label.as_str())
+fn iter_labels<T>(items: &[(String, T)]) -> impl Iterator<Item=&str> {
+    items.iter().map(|(label, _)| label.as_str())
 }
 
 trait VecExt<'a, T> {
@@ -35,7 +35,7 @@ trait VecExt<'a, T> {
 
 impl<'a, T> VecExt<'a, T> for Vec<(String, T)> {
     fn contains_label(&self, s: &str) -> bool {
-        iter_labels(self).find(|label| *label == s).is_some()
+        iter_labels(self).any(|label| label == s)
     }
     fn by_label(&'a self, s: &str) -> &'a T {
         &self.iter()
@@ -50,12 +50,7 @@ impl<'a, T> VecExt<'a, T> for Vec<(String, T)> {
 
 fn items_eq(a: &Item, b: &Item) -> bool {
     match a {
-        Item::Root => {
-            match b {
-                Item::Root => true,
-                _ => false,
-            }
-        }
+        Item::Root => matches!(b, Item::Root),
         Item::Def(a) => {
             match b {
                 Item::Def(b) => {
