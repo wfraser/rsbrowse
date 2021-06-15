@@ -72,8 +72,10 @@ fn info_dialog<B: Browser + 'static>(ui: &mut Cursive, crate_id: &B::CrateId, it
     ui.add_layer(info_dialog);
 
     if let Some(start_line) = start_line {
-        ui.refresh(); // Need to force a layout before we can do a scroll.
+        let screen_size = ui.screen_size();
         ui.call_on_name("source_scroll", move |view: &mut ScrollView<TextView>| {
+            // HAX: set_offset doesn't work on newly-added views until a layout is done
+            view.layout(screen_size);
             view.set_offset(
                 XY::new(
                     0,
