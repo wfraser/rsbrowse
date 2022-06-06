@@ -28,6 +28,7 @@ impl Analysis {
             .expect("failed to json-serialize rust analysis configuration");
 
         let cargo_status = Command::new("cargo")
+            .arg("+nightly")
             .arg("check")
             .arg("--target-dir")
             .arg(Path::new("target").join(SUBDIR))
