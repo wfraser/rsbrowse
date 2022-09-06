@@ -2,6 +2,7 @@ use crate::analysis::{Analysis, CrateId, CrateType, ImplDetails};
 use crate::browser_trait::{self, Browser};
 use rls_data::{Def, DefKind};
 use std::collections::hash_map::*;
+use std::fmt::Write;
 
 pub struct RlsBrowser {
     analysis: Analysis,
@@ -104,7 +105,7 @@ impl Browser for RlsBrowser {
                 // imp.children has methods for inherent impls (impl Foo) and overrides of trait
                 // methods.
                 for id in &imp.children {
-                    if let Some(method) = self.analysis.get_def(&crate_id, *id) {
+                    if let Some(method) = self.analysis.get_def(crate_id, *id) {
                         methods.insert(def_label(method), Item::Def(method.clone()));
                     }
                 }
@@ -114,12 +115,12 @@ impl Browser for RlsBrowser {
                     let (is_external, trait_crate, trait_id) = self.get_maybe_external_trait(
                         crate_id, trait_id);
 
-                    let children = self.analysis.get_def(&trait_crate, trait_id)
+                    let children = self.analysis.get_def(trait_crate, trait_id)
                         .map(|def| &def.children[..])
                         .unwrap_or(&[]);
 
                     for id in children {
-                        if let Some(method) = self.analysis.get_def(&trait_crate, *id) {
+                        if let Some(method) = self.analysis.get_def(trait_crate, *id) {
                             // Add to the map only if not existing (if it already exists it means
                             // the method has been overridden).
                             methods.entry(def_label(method))
@@ -142,7 +143,7 @@ impl Browser for RlsBrowser {
                     // This lets users easily see which trait methods are overridden and which are
                     // defaults.
                     if let Item::ExternalDef(external_crate_id, _) = item {
-                        *label += &format!(" ({})", external_crate_id.name);
+                        write!(*label, " ({})", external_crate_id.name).unwrap();
                     }
                 }
             }
@@ -164,14 +165,14 @@ impl Browser for RlsBrowser {
                     txt += &def.docs;
                     txt.push('\n');
                 }
-                txt += &format!("defined in {:?}\nstarting on line {}",
+                write!(txt, "defined in {:?}\nstarting on line {}",
                     def.span.file_name,
-                    def.span.line_start.0);
+                    def.span.line_start.0).unwrap();
             }
             Item::Impl(imp) => {
                 if let Some(t) = imp.trait_id {
                     if let Some(tdef) = self.analysis.get_def(crate_id, t) {
-                        txt += &format!("implementation of trait {}", tdef.qualname);
+                        write!(txt, "implementation of trait {}", tdef.qualname).unwrap();
                     } else {
                         txt += "implementation of unresolved trait";
                     }
@@ -181,7 +182,7 @@ impl Browser for RlsBrowser {
                 }
             }
             Item::Root => {
-                txt += &format!("crate root of {:?}", crate_id);
+                write!(txt, "crate root of {:?}", crate_id).unwrap();
             }
         }
         txt
@@ -192,7 +193,7 @@ impl Browser for RlsBrowser {
         let add_children = |txt: &mut String, crate_id, children: &[rls_data::Id]| {
             for child_id in children {
                 if let Some(child) = self.analysis.get_def(crate_id, *child_id) {
-                    *txt += &format!("\nchild {:?} = {:#?}", child_id, child);
+                    write!(txt, "\nchild {:?} = {:#?}", child_id, child).unwrap();
                 }
             }
         };
@@ -201,12 +202,12 @@ impl Browser for RlsBrowser {
                 add_children(&mut txt, crate_id, &def.children);
             }
             Item::ExternalDef(ext_crate_id, def) => {
-                txt += &format!("defined in external crate {}\n", crate_id.name);
+                writeln!(txt, "defined in external crate {}", crate_id.name).unwrap();
                 add_children(&mut txt, ext_crate_id, &def.children);
             }
             Item::Impl(impl_details) => {
                 let imp = self.analysis.get_impl(crate_id, impl_details.impl_id).unwrap();
-                txt += &format!("\nimpl: {:#?}", imp);
+                write!(txt, "\nimpl: {:#?}", imp).unwrap();
                 add_children(&mut txt, crate_id, &imp.children);
             }
             Item::Root => (),
@@ -239,7 +240,7 @@ fn get_source_for_def(def: &rls_data::Def) -> (String, usize) {
                 .lines()
                 .enumerate()
             {
-                txt += &format!("{}: ", i + 1);
+                write!(txt, "{}: ", i + 1).unwrap();
                 txt += &line.unwrap_or_else(|e| format!("<Read Error: {}>", e));
                 txt.push('\n');
             }
@@ -261,8 +262,8 @@ fn cmp_labels<T>(a: &(String, T), b: &(String, T)) -> std::cmp::Ordering {
     a.0.cmp(&b.0)
 }
 
-fn sort_by_label<T>(vec: &mut Vec<(String, T)>) {
-    vec.sort_unstable_by(cmp_labels);
+fn sort_by_label<T>(slice: &mut [(String, T)]) {
+    slice.sort_unstable_by(cmp_labels);
 }
 
 fn crate_label(c: &CrateId) -> String {

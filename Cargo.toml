@@ -1,6 +1,6 @@
 [package]
 name = "rsbrowse"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["William R. Fraser <wfraser@codewise.org>"]
 description = "an interactive browser for the contents of Rust crates"
 edition = "2018"

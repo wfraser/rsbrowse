@@ -67,7 +67,7 @@ impl Analysis {
         Self { crates, stdlib_crates }
     }
 
-    pub fn crate_ids<'a>(&'a self) -> impl Iterator<Item=CrateId> + 'a {
+    pub fn crate_ids(&self) -> impl Iterator<Item=CrateId> + '_ {
         self.crates.iter()
             .map(|c| c.id())
     }
@@ -92,7 +92,7 @@ impl Analysis {
                 a.defs.iter()
                     .find(|def| {
                         def.kind == rls_data::DefKind::Mod
-                            && def.name == ""
+                            && def.name.is_empty()
                     })
                     .expect("missing root module")
             }

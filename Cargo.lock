@@ -444,7 +444,7 @@ dependencies = [
 
 [[package]]
 name = "rsbrowse"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cursive",
  "lazy_static",
