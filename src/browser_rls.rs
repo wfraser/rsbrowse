@@ -87,7 +87,7 @@ impl Browser for RlsBrowser {
                                 }
                                 None => "Self".to_owned(),
                             };
-                            (format!("impl {}", trait_name), Item::Impl(impl_details))
+                            (format!("impl {trait_name}"), Item::Impl(impl_details))
                         })
                         .collect::<Vec<_>>();
 
@@ -182,18 +182,18 @@ impl Browser for RlsBrowser {
                 }
             }
             Item::Root => {
-                write!(txt, "crate root of {:?}", crate_id).unwrap();
+                write!(txt, "crate root of {crate_id:?}").unwrap();
             }
         }
         txt
     }
 
     fn get_debug_info(&self, crate_id: &CrateId, item: &Item) -> String {
-        let mut txt = format!("{:#?}", item);
+        let mut txt = format!("{item:#?}");
         let add_children = |txt: &mut String, crate_id, children: &[rls_data::Id]| {
             for child_id in children {
                 if let Some(child) = self.analysis.get_def(crate_id, *child_id) {
-                    write!(txt, "\nchild {:?} = {:#?}", child_id, child).unwrap();
+                    write!(txt, "\nchild {child_id:?} = {child:#?}").unwrap();
                 }
             }
         };
@@ -207,7 +207,7 @@ impl Browser for RlsBrowser {
             }
             Item::Impl(impl_details) => {
                 let imp = self.analysis.get_impl(crate_id, impl_details.impl_id).unwrap();
-                write!(txt, "\nimpl: {:#?}", imp).unwrap();
+                write!(txt, "\nimpl: {imp:#?}").unwrap();
                 add_children(&mut txt, crate_id, &imp.children);
             }
             Item::Root => (),
@@ -223,7 +223,7 @@ impl Browser for RlsBrowser {
             }
             Item::Impl(imp) => {
                 let id = imp.trait_id.unwrap_or(imp.impl_on);
-                (format!("source listing unimplemented for impls. impl ID = {:?}", id), None)
+                (format!("source listing unimplemented for impls. impl ID = {id:?}"), None)
             }
             Item::Root => (String::new(), None),
         }
@@ -241,7 +241,7 @@ fn get_source_for_def(def: &rls_data::Def) -> (String, usize) {
                 .enumerate()
             {
                 write!(txt, "{}: ", i + 1).unwrap();
-                txt += &line.unwrap_or_else(|e| format!("<Read Error: {}>", e));
+                txt += &line.unwrap_or_else(|e| format!("<Read Error: {e}>"));
                 txt.push('\n');
             }
             let mut line = def.span.line_start.0 - 1;
@@ -253,7 +253,7 @@ fn get_source_for_def(def: &rls_data::Def) -> (String, usize) {
             (txt, line as usize)
         }
         Err(e) => {
-            (format!("Error opening source: {}", e), 0)
+            (format!("Error opening source: {e}"), 0)
         }
     }
 }
@@ -296,7 +296,7 @@ fn def_label(def: &Def) -> String {
         DefKind::Field => return format!("{}: {}", def.name, def.value),
         DefKind::Local => "local", // or should we return None?
     };
-    format!("{} {}", prefix, def.name)
+    format!("{prefix} {}", def.name)
 }
 
 #[allow(clippy::large_enum_variant)]

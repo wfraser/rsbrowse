@@ -37,13 +37,13 @@ impl Analysis {
             .current_dir(workspace_path)
             .status()
             .map_err(|e|
-                format!("failed to run 'cargo build': {}", e)
+                format!("failed to run 'cargo build': {e}")
             )?;
 
         if cargo_status.success() {
             Ok(())
         } else if let Some(code) = cargo_status.code() {
-            Err(format!("'cargo build' failed with exit code {}", code))
+            Err(format!("'cargo build' failed with exit code {code}"))
         } else {
             Err("'cargo build' killed by signal".to_owned())
         }
@@ -281,7 +281,7 @@ impl std::str::FromStr for CrateType {
             "cdylib" => Self::CDylib,
             "dylib" => Self::Dylib,
             _ => {
-                return Err(format!("unknown crate type {:?}", s));
+                return Err(format!("unknown crate type {s:?}"));
             }
         })
     }
@@ -303,7 +303,7 @@ impl AnalysisLoader for Loader {
     }
 
     fn set_path_prefix(&mut self, prefix: &Path) {
-        unimplemented!("prefix: {:?}", prefix);
+        unimplemented!("prefix: {prefix:?}");
     }
 
     fn abs_path_prefix(&self) -> Option<PathBuf> {
@@ -343,7 +343,7 @@ fn get_stdlib_analysis_path() -> Option<PathBuf> {
         .arg("target-libdir")
         .output()
         .map_err(|e| {
-            eprintln!("Error running 'rustc --print target-libdir': {}", e);
+            eprintln!("Error running 'rustc --print target-libdir': {e}");
             e
         })
         .ok()
@@ -351,7 +351,7 @@ fn get_stdlib_analysis_path() -> Option<PathBuf> {
             if out.status.success() {
                 let path = String::from_utf8(out.stdout)
                     .map_err(|e| {
-                        eprintln!("'rustc --print target-libdir' returned invalid utf8: {}", e);
+                        eprintln!("'rustc --print target-libdir' returned invalid utf8: {e}");
                         e
                     })
                     .ok()?;
