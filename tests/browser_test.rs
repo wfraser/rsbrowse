@@ -1,6 +1,6 @@
 #[macro_use] extern crate lazy_static;
 
-use rsbrowse::analysis::Analysis;
+use rsbrowse::analysis_rls::Analysis;
 use rsbrowse::browser_rls::{RlsBrowser, Item};
 use rsbrowse::browser_trait::Browser;
 use std::path::Path;

@@ -3,17 +3,26 @@ name = "rsbrowse"
 version = "0.1.0"
 authors = ["William R. Fraser <wfraser@codewise.org>"]
 description = "an interactive browser for the contents of Rust crates"
-edition = "2018"
+edition = "2021"
 
 [dependencies]
+clap = { version = "4.2.5", features = ["derive"] }
+protobuf = "*"
 rls-analysis = "0.18.0"
 rls-data = "0.19.0"
+#scip = "0.1.1"
 serde_json = "1.0"
 
 [dependencies.cursive]
 version = "0.18"
 default-features = false
 features = ["pancurses-backend"]
+
+[dependencies.scip]
+#git = "https://github.com/sourcegraph/scip"
+#rev = "17d46abc2d64b62d43ddeccd057da90638ead292"
+git = "https://github.com/wfraser/scip"
+branch = "symbol-parse-fixes"
 
 [dev-dependencies]
 lazy_static = "1.4"

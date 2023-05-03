@@ -1,5 +1,6 @@
-use crate::analysis::{Analysis, CrateId, CrateType, ImplDetails};
+use crate::analysis_rls::{Analysis, CrateId, CrateType, ImplDetails};
 use crate::browser_trait::{self, Browser};
+use crate::sort_by_label;
 use rls_data::{Def, DefKind};
 use std::collections::hash_map::*;
 
@@ -255,14 +256,6 @@ fn get_source_for_def(def: &rls_data::Def) -> (String, usize) {
             (format!("Error opening source: {}", e), 0)
         }
     }
-}
-
-fn cmp_labels<T>(a: &(String, T), b: &(String, T)) -> std::cmp::Ordering {
-    a.0.cmp(&b.0)
-}
-
-fn sort_by_label<T>(vec: &mut Vec<(String, T)>) {
-    vec.sort_unstable_by(cmp_labels);
 }
 
 fn crate_label(c: &CrateId) -> String {
