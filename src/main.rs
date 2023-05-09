@@ -10,12 +10,15 @@ struct Arguments {
     workspace_path: PathBuf,
 
     /// What analysis engine to use.
-    #[arg(long, default_value_t = AnalysisMode::Rls)]
+    #[arg(long, default_value_t = AnalysisMode::Driver)]
     mode: AnalysisMode,
 }
 
 #[derive(Debug, Clone, Copy)]
 enum AnalysisMode {
+    /// Use our custom rustc driver,
+    Driver,
+
     /// Use the `-Z save-analysis` feature of rustc, part of RLS. Only available in rust v0.70 and below.
     Rls,
 
@@ -26,6 +29,7 @@ enum AnalysisMode {
 impl AnalysisMode {
     fn as_str(&self) -> &'static str {
         match self {
+            Self::Driver => "driver",
             Self::Rls => "rls",
             Self::Scip => "scip",
         }
@@ -34,7 +38,7 @@ impl AnalysisMode {
 
 impl clap::ValueEnum for AnalysisMode {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Rls, Self::Scip]
+        &[Self::Driver, Self::Rls, Self::Scip]
     }
 
     fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
@@ -49,9 +53,22 @@ impl Display for AnalysisMode {
 }
 
 fn main() {
+    if std::env::var("RUSTC_WRAPPER").is_ok() {
+        rsbrowse::rustc_wrapper::run();
+        return;
+    }
+
     let args = Arguments::parse();
 
     match args.mode {
+        AnalysisMode::Driver => {
+            use rsbrowse::analysis_driver::Analysis;
+
+            eprintln!("Running Cargo to generate analysis data...");
+            Analysis::generate(&args.workspace_path).unwrap();
+
+            // TODO
+        }
         AnalysisMode::Rls => {
             use rsbrowse::analysis_rls::Analysis;
             use rsbrowse::browser_rls::RlsBrowser;

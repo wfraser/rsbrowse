@@ -7,3 +7,20 @@ pub trait ExternTrait {
         "this is the default impl"
     }
 }
+
+fn free_func(s: &str) -> usize {
+    s.len()
+}
+
+mod a {
+    mod b {
+        mod c {
+            mod d {
+                struct abcd {
+                    abcd_f1: String,
+                    abcd_f2: i32,
+                }
+            }
+        }
+    }
+}
