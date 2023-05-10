@@ -4,23 +4,40 @@ use rustc_hir::def::Res;
 use rustc_interface::{Config, Queries};
 use rustc_interface::interface::Compiler;
 use rustc_span::def_id::{CrateNum, DefId};
-use rustc_span::symbol::Ident;
+use serde::{Deserialize, Serialize};
 
 struct RsbrowseCallbacks {}
 
-fn shortid(def_id: DefId) -> String {
-    format!("{}:{}", def_id.krate.as_u32(), def_id.index.as_u32())
+fn shortid(def_id: DefId) -> Id {
+    Id::Def(def_id.krate.as_u32(), def_id.index.as_u32())
 }
 
-fn tyid(ty: &Ty<'_>) -> String {
+fn tyid(ty: &Ty<'_>) -> Id {
     if let TyKind::Path(QPath::Resolved(_, p)) = ty.kind {
         if let Some(id) = p.res.opt_def_id() {
             return shortid(id);
         } else if let Res::PrimTy(ty) = p.res {
-            return ty.name_str().to_owned();
+            return Id::Primitive(ty.name_str().to_owned());
         }
     }
     panic!("type {ty:?} not resolved!");
+}
+
+impl RsbrowseCallbacks {
+    fn emit_entry(&self, e: Entry) {
+        // TODO: write to file
+        eprint!("# ");
+        serde_json::to_writer(std::io::stderr(), &e).unwrap();
+        eprintln!();
+    }
+
+    fn emit(&self, id: Id, kind: Kind) {
+        self.emit_entry(Entry { id, kind, children: vec![] });
+    }
+
+    fn emits(&self, id: Id, kind: Kind, children: Vec<Id>) {
+        self.emit_entry(Entry { id, kind, children });
+    }
 }
 
 impl Callbacks for RsbrowseCallbacks {
@@ -34,96 +51,108 @@ impl Callbacks for RsbrowseCallbacks {
         eprintln!("crate name (1): {}", rustc_session::output::find_crate_name(compiler.session(), &[]));
 
         queries.global_ctxt().expect("global_ctxt").enter(|tcx| {
-            eprintln!(r#""0","crate","{}""#, tcx.crate_name(CrateNum::from_u32(0)).as_str());
+            self.emit(Id::Crate(0), Kind::Crate(tcx.crate_name(CrateNum::from_u32(0)).as_str().to_owned()));
             for num in tcx.crates(()) {
                 // TODO: crate type
-                eprintln!(r#""{}","crate","{}""#, num.as_u32(), tcx.crate_name(*num).as_str());
+                self.emit(Id::Crate(num.as_u32()), Kind::Crate(tcx.crate_name(*num).as_str().to_owned()));
             }
             for id in tcx.hir().items() {
                 let hir = tcx.hir();
                 let item = hir.item(id);
                 let id = shortid(id.owner_id.to_def_id());
-                let (kind, name, children) = match &item.kind {
+                let mut children = vec![];
+                let kind = match &item.kind {
                     ItemKind::Use(..) | ItemKind::GlobalAsm(..) | ItemKind::ExternCrate(..) => continue,
-                    ItemKind::Static(_ty, ..) => ("static", item.ident, vec![]), // TODO: type?
-                    ItemKind::Const(_ty, ..) => ("const", item.ident, vec![]), // TODO: type?
-                    ItemKind::Fn(..) => ("fn", item.ident, vec![]),
-                    ItemKind::Macro(..) => ("macro", item.ident, vec![]),
+                    ItemKind::Static(_ty, ..) => Kind::Static(item.ident.to_string()), // TODO: type?
+                    ItemKind::Const(_ty, ..) => Kind::Const(item.ident.to_string()), // TODO: type?
+                    ItemKind::Fn(..) => Kind::Fn(item.ident.to_string()),
+                    ItemKind::Macro(..) => Kind::Macro(item.ident.to_string()),
                     ItemKind::Mod(m) => {
-                        let children = m.item_ids
+                        children.extend(m.item_ids
                             .iter()
-                            .map(|i| shortid(i.owner_id.to_def_id()))
-                            .collect::<Vec<_>>();
-                        ("mod", item.ident, children)
+                            .map(|i| shortid(i.owner_id.to_def_id())));
+                        Kind::Mod(item.ident.to_string())
                     }
                     ItemKind::ForeignMod { items, .. } => {
-                        let children = items
+                        children.extend(items
                             .iter()
-                            .map(|f| shortid(f.id.owner_id.to_def_id()))
-                            .collect::<Vec<_>>();
-                        ("extern", item.ident, children)
+                            .map(|f| shortid(f.id.owner_id.to_def_id())));
+                        Kind::Extern(item.ident.to_string())
                     }
                     //ItemKind::TyAlias(..)
                     //ItemKind::OpaqueTy(..)
                     //ItemKind::Enum(def, generics)
                     ItemKind::Struct(variant_data, _) => {
-                        let mut fields = vec![];
                         for fd in variant_data.fields() {
                             let id = shortid(fd.def_id.into());
-                            eprintln!(r#""{id}","field","{}","{}""#, fd.ident, tyid(fd.ty));
-                            fields.push(id);
+                            self.emit(id.clone(), Kind::Field { name: fd.ident.to_string(), ty: tyid(fd.ty) });
+                            children.push(id);
                         }
-                        ("struct", item.ident, fields)
+                        Kind::Struct(item.ident.to_string())
                     }
                     //ItemKind::Union(variant_data, generics)
                     //ItemKind::Trait(is_auto, unsafety, generics, generic_bounds, item_refs)
                     //ItemKind::TraitAlias(generics, generic_bounds)
                     ItemKind::Impl(imp) => {
-                        let name = if let Some(t) = &imp.of_trait {
-                            let t_id = t.path.res.def_id();
-                            /*if t_id.is_local() {
-                                hir.get_if_local(t_id).unwrap().ident().unwrap()
-                            } else {
-                                Ident::from_str(&tcx.def_path_str(t_id))
-                            }*/
-                            //let sym = tcx.item_name(t_id);
-                            //Ident::with_dummy_span(sym)
-                            tcx.opt_item_ident(t_id).unwrap()
-                        } else {
-                            Ident::from_str("Self")
-                        };
-                        let mut children = vec![];
-                        // special case: first child is the type the impl is on
-                        children.push(tyid(&imp.self_ty));
+                        let of = imp.of_trait.as_ref().map(|t| {
+                            shortid(t.path.res.def_id())
+                        });
                         for item in imp.items {
                             // need to also emit the methods separately b/c they don't appear in
                             // hir.items()
                             let id = shortid(item.id.owner_id.to_def_id());
-                            let kind = match item.kind {
-                                AssocItemKind::Const => "const",
-                                AssocItemKind::Fn { .. } => "fn",
-                                AssocItemKind::Type => "type",
+                            let ctor = match item.kind {
+                                AssocItemKind::Const => Kind::Const,
+                                AssocItemKind::Fn { .. } => Kind::Fn,
+                                AssocItemKind::Type => Kind::Type,
                             };
-                            eprintln!(r#""{id}","{kind}","{}""#, item.ident);
+                            self.emit(id.clone(), ctor(item.ident.to_string()));
                             children.push(id);
                         }
-                        ("impl", name, children)
+                        Kind::Impl { of, on: tyid(&imp.self_ty) }
                     }
                     _ => {
                         eprintln!("TODO: {item:#?}");
                         continue;
                     },
                 };
-                eprint!(r#""{id}","{kind}","{name}""#);
-                for c in children {
-                    eprint!(",\"{c}\"");
-                }
-                eprintln!();
+                self.emits(id, kind, children);
             }
         });
 
         Compilation::Continue
     }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Entry {
+    id: Id,
+    kind: Kind,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    children: Vec<Id>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+enum Id {
+    Crate(u32),
+    Def(u32, u32),
+    Primitive(String),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+enum Kind {
+    Crate(String),
+    Static(String),
+    Const(String),
+    Fn(String),
+    Macro(String),
+    Mod(String),
+    Extern(String),
+    Field { name: String, ty: Id },
+    Struct(String),
+    Impl { of: Option<Id>, on: Id },
+    Type(String),
 }
 
 pub fn run() {
