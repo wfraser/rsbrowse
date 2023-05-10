@@ -1,4 +1,6 @@
 pub mod x {
+    use std::fmt::Debug;
+
     pub struct S;
 
     impl S {
@@ -8,6 +10,12 @@ pub mod x {
     impl std::fmt::Display for S {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             f.write_str("THIS IS AN S STRUCT IN MOD X YO")
+        }
+    }
+
+    impl Debug for S {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("DEBUG TIME")
         }
     }
 
