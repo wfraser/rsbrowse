@@ -53,7 +53,7 @@ impl Display for AnalysisMode {
 }
 
 fn main() {
-    if std::env::var("RUSTC_WRAPPER").is_ok() {
+    if cfg!(feature = "rustc-wrapper") && std::env::var("RUSTC_WRAPPER").is_ok() {
         rsbrowse::rustc_wrapper::run();
         return;
     }
@@ -63,11 +63,15 @@ fn main() {
     match args.mode {
         AnalysisMode::Driver => {
             use rsbrowse::analysis_driver::Analysis;
+            use rsbrowse::browser_driver::DriverBrowser;
 
             eprintln!("Running Cargo to generate analysis data...");
             Analysis::generate(&args.workspace_path).unwrap();
+            eprintln!("Reading analysis data...");
+            let analysis = Analysis::load(&args.workspace_path);
 
-            // TODO
+            let browser = DriverBrowser::new(analysis);
+            ui::run(browser);
         }
         AnalysisMode::Rls => {
             use rsbrowse::analysis_rls::Analysis;

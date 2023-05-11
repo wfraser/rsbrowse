@@ -4,9 +4,14 @@ use rustc_hir::def::Res;
 use rustc_interface::{Config, Queries};
 use rustc_interface::interface::Compiler;
 use rustc_span::def_id::{CrateNum, DefId};
-use serde::{Deserialize, Serialize};
 
-struct RsbrowseCallbacks {}
+use crate::analysis_driver::{Id, Entry, Kind};
+use std::fs::File;
+use std::io::Write;
+
+struct RsbrowseCallbacks {
+    out: File,
+}
 
 fn shortid(def_id: DefId) -> Id {
     Id::Def(def_id.krate.as_u32(), def_id.index.as_u32())
@@ -24,18 +29,17 @@ fn tyid(ty: &Ty<'_>) -> Id {
 }
 
 impl RsbrowseCallbacks {
-    fn emit_entry(&self, e: Entry) {
-        // TODO: write to file
-        eprint!("# ");
-        serde_json::to_writer(std::io::stderr(), &e).unwrap();
-        eprintln!();
+    fn emit_entry(&mut self, e: Entry) {
+        serde_json::to_writer(&mut self.out, &e).unwrap();
+        self.out.write(b"\n").unwrap();
+        self.out.flush().unwrap();
     }
 
-    fn emit(&self, id: Id, kind: Kind) {
+    fn emit(&mut self, id: Id, kind: Kind) {
         self.emit_entry(Entry { id, kind, children: vec![] });
     }
 
-    fn emits(&self, id: Id, kind: Kind, children: Vec<Id>) {
+    fn emits(&mut self, id: Id, kind: Kind, children: Vec<Id>) {
         self.emit_entry(Entry { id, kind, children });
     }
 }
@@ -124,37 +128,6 @@ impl Callbacks for RsbrowseCallbacks {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct Entry {
-    id: Id,
-    kind: Kind,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    children: Vec<Id>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-enum Id {
-    Crate(u32),
-    Def(u32, u32),
-    Primitive(String),
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-enum Kind {
-    Crate(String),
-    Static(String),
-    Const(String),
-    Fn(String),
-    Macro(String),
-    Mod(String),
-    Extern(String),
-    Field { name: String, ty: Id },
-    Struct(String),
-    Impl { of: Option<Id>, on: Id },
-    Type(String),
-}
-
 pub fn run() {
     let mut args = std::env::args().collect::<Vec<_>>();
 
@@ -163,7 +136,17 @@ pub fn run() {
     }
 
     eprintln!("args: {args:?}");
-    let mut cb = RsbrowseCallbacks {};
+    let cwd = std::env::current_dir().unwrap();
+    eprintln!("cwd: {:?}", cwd);
+    let target = cwd.join("target");
+    if let Err(e) = std::fs::create_dir(&target) {
+        if e.kind() != std::io::ErrorKind::AlreadyExists {
+            panic!("failed to make target dir: {}", e);
+        }
+    }
+    let mut cb = RsbrowseCallbacks {
+        out: File::create(target.join("rsbrowse.json")).expect("failed to create rsbrowse.json"),
+    };
 
     let run = rustc_driver::RunCompiler::new(&args, &mut cb);
     if let Err(e) = run.run() {

@@ -27,3 +27,7 @@ branch = "symbol-parse-fixes"
 
 [dev-dependencies]
 lazy_static = "1.4"
+
+[features]
+default = ["rustc-wrapper"]
+rustc-wrapper = []
