@@ -14,7 +14,7 @@ pub struct Analysis {
 }
 
 impl Analysis {
-    pub fn generate(workspace_path: impl AsRef<Path>) -> Result<(), String> {
+    pub fn generate(workspace_path: impl AsRef<Path>, compiler: &str) -> Result<(), String> {
         let config_json = serde_json::to_string(
             &rls_data::config::Config {
                 output_file: None, // use default paths
@@ -28,7 +28,7 @@ impl Analysis {
             .expect("failed to json-serialize rust analysis configuration");
 
         let cargo_status = Command::new("cargo")
-            .arg("+nightly")
+            .arg(format!("+{compiler}"))
             .arg("check")
             .arg("--target-dir")
             .arg(Path::new("target").join(SUBDIR))
