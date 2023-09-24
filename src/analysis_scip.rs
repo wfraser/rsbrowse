@@ -1,8 +1,6 @@
 use std::collections::{HashSet, HashMap};
-use std::ffi::OsString;
 use std::fs::File;
 use std::io::BufReader;
-use std::os::unix::prelude::OsStringExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -33,7 +31,7 @@ impl Analysis {
         if bin.last() == Some(&b'\n') {
             bin.pop();
         }
-        let bin = PathBuf::from(OsString::from_vec(bin));
+        let bin = path_from_bytes(bin);
         eprintln!("running {bin:?}");
 
         Command::new(bin)
@@ -193,4 +191,15 @@ pub struct Item {
     pub doc: Vec<String>,
     pub rel: Vec<scip::types::Relationship>,
     pub occur: Vec<(PathBuf, Occurrence)>, // (file path, occurrance)
+}
+
+#[cfg(windows)]
+fn path_from_bytes(bytes: Vec<u8>) -> PathBuf {
+    PathBuf::from(String::from_utf8(bytes).expect("non-UTF8 path"))
+}
+
+#[cfg(unix)]
+fn path_from_bytes(bytes: Vec<u8>) -> PathBuf {
+    use std::os::unix::prelude::OsStringExt;
+    PathBuf::from(OsString::from_vec(bytes))
 }
