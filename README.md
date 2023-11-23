@@ -8,6 +8,12 @@ Browse Rust code from the compiler's perspective.
 
 rsbrowse runs `rustc` on your code and tells it to save analysis info about what it sees. It then presents it in an interactive text-mode viewer. The analysis info is the same thing that powers RLS (Rust Language Server) for enhancing IDEs, but instead of using it to navigate source code, rsbrowse does the reverse and lets you browse the structure of the program from the compiler's view.
 
+# ⚠️ *currently broken* ⚠️
+
+This project depends on the `-Z save-analysis` flag of rustc, which was removed in Rust 1.69.
+
+I have plans to migrate it to the Rustdoc JSON output, but haven't implemented that yet.
+
 # Requirements
 
 * cargo
