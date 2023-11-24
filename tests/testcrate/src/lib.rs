@@ -1,5 +1,8 @@
 pub mod x {
-    pub struct S;
+    pub struct S {
+        pub int_field: i32,
+        string_field: String,
+    }
 
     impl S {
         pub fn f(&self) {}
@@ -22,7 +25,7 @@ pub mod y {
     pub struct S;
 
     impl S {
-        pub fn g(&self) {}
+        pub fn spoopadoop(&self) {}
     }
 
     impl crate::Trait<u64> for S {

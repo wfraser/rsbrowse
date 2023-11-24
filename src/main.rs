@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use rsbrowse::analysis::Analysis;
-use rsbrowse::browser_rls::RlsBrowser;
+use rsbrowse::browser_rustdoc::RustdocBrowser;
 use rsbrowse::ui;
 
 struct Arguments {
@@ -51,10 +51,30 @@ fn main() {
     Analysis::generate(&args.workspace_path, &args.compiler).unwrap();
 
     eprintln!("Reading analysis data...");
-    let analysis = Analysis::load(&args.workspace_path);
+    let analysis = Analysis::load(&args.workspace_path).unwrap();
 
     std::env::set_current_dir(&args.workspace_path).unwrap();
 
-    let browser = RlsBrowser::new(analysis);
+    let browser = RustdocBrowser::new(analysis);
+
+    //use rsbrowse::browser_trait::Browser;
+    //println!("{:#?}", browser.list_crates());
+
+    /*let stuff = browser.list_items(
+        &rsbrowse::analysis::CrateId { id: 0, name: String::new() },
+        &rsbrowse::browser_rustdoc::Item::Root,
+    )
+        .into_iter()
+        .map(|(label, item)| {
+            let id = if let rsbrowse::browser_rustdoc::Item::Item(item) = &item {
+                &item.id.0
+            } else {
+                "root"
+            };
+            format!("{label} = {id}")
+        })
+        .collect::<Vec<_>>();
+    println!("{:#?}", stuff);*/
+
     ui::run(browser);
 }
