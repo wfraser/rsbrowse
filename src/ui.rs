@@ -1,9 +1,9 @@
-use cursive::{Cursive, CursiveExt, XY};
+use crate::browser_trait::{Browser, Item};
+use crate::scroll_pad::ScrollPad;
 use cursive::event::Key;
 use cursive::traits::*;
 use cursive::views::{Dialog, LinearLayout, ScrollView, SelectView, TextView};
-use crate::browser_trait::{Browser, Item};
-use crate::scroll_pad::ScrollPad;
+use cursive::{Cursive, CursiveExt, XY};
 use std::borrow::Cow;
 
 /// How many lines to scroll to before a definition.
@@ -52,22 +52,20 @@ fn info_dialog<B: Browser + 'static>(ui: &mut Cursive, crate_id: &B::CrateId, it
     let info_dialog = Dialog::around(
         LinearLayout::vertical()
             .child(TextView::new(info_txt).scrollable())
-            .child(TextView::new(source_txt)
-                .scrollable()
-                .with_name("source_scroll"))
-            .scrollable()
-        )
-        .dismiss_button("ok")
-        .button("debug", move |ui| {
-            let data = ui.user_data::<UserData<B>>().unwrap();
-            let dbg_txt = data.browser.get_debug_info(&crate_id_dlg, &item_dlg);
-            let dbg_dialog = Dialog::around(
-                TextView::new(dbg_txt)
+            .child(
+                TextView::new(source_txt)
                     .scrollable()
-                )
-                .dismiss_button("ok");
-            ui.add_layer(dbg_dialog);
-        });
+                    .with_name("source_scroll"),
+            )
+            .scrollable(),
+    )
+    .dismiss_button("ok")
+    .button("debug", move |ui| {
+        let data = ui.user_data::<UserData<B>>().unwrap();
+        let dbg_txt = data.browser.get_debug_info(&crate_id_dlg, &item_dlg);
+        let dbg_dialog = Dialog::around(TextView::new(dbg_txt).scrollable()).dismiss_button("ok");
+        ui.add_layer(dbg_dialog);
+    });
 
     ui.add_layer(info_dialog);
 
@@ -76,10 +74,10 @@ fn info_dialog<B: Browser + 'static>(ui: &mut Cursive, crate_id: &B::CrateId, it
         ui.call_on_name("source_scroll", move |view: &mut ScrollView<TextView>| {
             // HAX: set_offset doesn't work on newly-added views until a layout is done
             view.layout(screen_size);
-            view.set_offset(
-                XY::new(
-                    0,
-                    start_line.saturating_sub(SOURCE_LEADING_CONTEXT_LINES)));
+            view.set_offset(XY::new(
+                0,
+                start_line.saturating_sub(SOURCE_LEADING_CONTEXT_LINES),
+            ));
         });
     }
 }
@@ -124,13 +122,9 @@ fn add_panel<B: Browser + 'static>(
 
     ui.call_on_name("horiz_layout", |horiz_layout: &mut LinearLayout| {
         for view in next {
-            horiz_layout.add_child(
-                ScrollPad::new(
-                    ScrollView::new(view)
-                        .scroll_y(true)
-                        .show_scrollbars(true)
-                )
-            );
+            horiz_layout.add_child(ScrollPad::new(
+                ScrollView::new(view).scroll_y(true).show_scrollbars(true),
+            ));
         }
     });
 }
@@ -138,20 +132,23 @@ fn add_panel<B: Browser + 'static>(
 fn about(ui: &mut Cursive) {
     ui.add_layer(
         Dialog::around(
-            TextView::new(
-                format!("rsbrowse/{}\n\
+            TextView::new(format!(
+                "rsbrowse/{}\n\
                     {}{}by Bill Fraser\n\
                     https://github.com/wfraser/rsbrowse",
-                    env!("CARGO_PKG_VERSION"),
-                    env!("GIT_COMMIT_HASH"),
-                    if env!("GIT_COMMIT_HASH").is_empty() { "" } else { "\n" },
-                    )
-                )
-                .h_align(cursive::align::HAlign::Center)
-            )
-            .title("about")
-            .dismiss_button("ok")
+                env!("CARGO_PKG_VERSION"),
+                env!("GIT_COMMIT_HASH"),
+                if env!("GIT_COMMIT_HASH").is_empty() {
+                    ""
+                } else {
+                    "\n"
+                },
+            ))
+            .h_align(cursive::align::HAlign::Center),
         )
+        .title("about")
+        .dismiss_button("ok"),
+    )
 }
 
 pub fn run<B: Browser + 'static>(browser: B) {
@@ -161,33 +158,32 @@ pub fn run<B: Browser + 'static>(browser: B) {
         .add_leaf("rsbrowse!", about)
         .add_delimiter()
         .add_leaf("Quit", |ui| ui.quit())
-        .add_leaf("(ESC to activate menu)", |_|());
+        .add_leaf("(ESC to activate menu)", |_| ());
     ui.set_autohide_menu(false);
     ui.add_global_callback(Key::Esc, |ui| ui.select_menubar());
     //ui.add_global_callback(Key::Esc, |ui| ui.quit());
 
-    ui.set_theme(
-        cursive::theme::Theme::default()
-            .with(|theme| {
-                use cursive::theme::{
-                    BaseColor::{Black, White, Green},
-                    Color::{Light, Dark, Rgb},
-                    PaletteColor,
-                };
-                theme.palette[PaletteColor::Background] = Dark(Black);
-                theme.palette[PaletteColor::View] = Rgb(32,32,32);
-                theme.palette[PaletteColor::Shadow] = Light(Black);
-                theme.palette[PaletteColor::Primary] = Dark(White);
-                theme.palette[PaletteColor::Highlight] = Dark(Green);
-            })
-        );
+    ui.set_theme(cursive::theme::Theme::default().with(|theme| {
+        use cursive::theme::{
+            BaseColor::{Black, Green, White},
+            Color::{Dark, Light, Rgb},
+            PaletteColor,
+        };
+        theme.palette[PaletteColor::Background] = Dark(Black);
+        theme.palette[PaletteColor::View] = Rgb(32, 32, 32);
+        theme.palette[PaletteColor::Shadow] = Light(Black);
+        theme.palette[PaletteColor::Primary] = Dark(White);
+        theme.palette[PaletteColor::Highlight] = Dark(Green);
+    }));
 
     let mut crates_select = SelectView::new();
     for (label, crate_id) in browser.list_crates() {
         crates_select.add_item(label, crate_id);
     }
 
-    let first_crate = crates_select.get_item(0).map(|(_label, crate_id)| crate_id.clone());
+    let first_crate = crates_select
+        .get_item(0)
+        .map(|(_label, crate_id)| crate_id.clone());
 
     // TODO: implement a better live search than this
     crates_select.set_autojump(true);
@@ -199,15 +195,12 @@ pub fn run<B: Browser + 'static>(browser: B) {
     ui.add_fullscreen_layer(
         ScrollView::new(
             LinearLayout::horizontal()
-                .child(
-                    ScrollPad::new(
-                        ScrollView::new(crates_select)
-                            .scroll_y(true)
-                    )
-                )
-                .with_name("horiz_layout")
-            )
-            .scroll_x(true)
+                .child(ScrollPad::new(
+                    ScrollView::new(crates_select).scroll_y(true),
+                ))
+                .with_name("horiz_layout"),
+        )
+        .scroll_x(true),
     );
 
     ui.set_user_data(UserData { browser });

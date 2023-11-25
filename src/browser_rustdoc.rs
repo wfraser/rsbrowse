@@ -8,9 +8,7 @@ pub struct RustdocBrowser {
 
 impl RustdocBrowser {
     pub fn new(analysis: Analysis) -> Self {
-        Self {
-            analysis,
-        }
+        Self { analysis }
     }
 }
 
@@ -19,7 +17,9 @@ impl Browser for RustdocBrowser {
     type Item = Item;
 
     fn list_crates(&self) -> Vec<(String, CrateId)> {
-        let mut crates = self.analysis.crate_ids()
+        let mut crates = self
+            .analysis
+            .crate_ids()
             //.filter(|c| !self.analysis.stdlib_crates.contains(c))
             .map(|c| (crate_label(&c), c))
             .collect::<Vec<_>>();
@@ -34,14 +34,14 @@ impl Browser for RustdocBrowser {
             Item::Item(item) => Some(item.id.clone()),
             _ => None,
         };
-        
-        let mut items = self.analysis.items(crate_id, parent_id)
+
+        let mut items = self
+            .analysis
+            .items(crate_id, parent_id)
             .filter(|item| {
                 // Remove the clutter of automatically derived, blanket, and synthetic trait impls.
                 use rustdoc_types::ItemEnum::*;
-                if item.attrs.iter()
-                    .any(|a| a == "#[automatically_derived]")
-                {
+                if item.attrs.iter().any(|a| a == "#[automatically_derived]") {
                     return false;
                 }
                 match &item.inner {
@@ -65,9 +65,12 @@ impl Browser for RustdocBrowser {
                     txt.push('\n');
                 }
                 if let Some(span) = &item.span {
-                    write!(txt, "defined in {:?}\nstarting on line {}",
-                        span.filename,
-                        span.begin.0).unwrap();
+                    write!(
+                        txt,
+                        "defined in {:?}\nstarting on line {}",
+                        span.filename, span.begin.0
+                    )
+                    .unwrap();
                 }
             }
             Item::Root => {
@@ -101,10 +104,7 @@ fn get_source_for_item(item: &rustdoc_types::Item) -> (String, usize) {
     match File::open(&span.filename) {
         Ok(f) => {
             let mut txt = String::new();
-            for (i, line) in BufReader::new(f)
-                .lines()
-                .enumerate()
-            {
+            for (i, line) in BufReader::new(f).lines().enumerate() {
                 write!(txt, "{}: ", i + 1).unwrap();
                 txt += &line.unwrap_or_else(|e| format!("<Read Error: {e}>"));
                 txt.push('\n');
@@ -112,9 +112,7 @@ fn get_source_for_item(item: &rustdoc_types::Item) -> (String, usize) {
             let line = span.begin.0 - 1;
             (txt, line)
         }
-        Err(e) => {
-            (format!("Error opening source: {e}"), 0)
-        }
+        Err(e) => (format!("Error opening source: {e}"), 0),
     }
 }
 
@@ -193,12 +191,23 @@ fn type_label(ty: &rustdoc_types::Type) -> String {
             // TODO: needs to also include the generic params, otherwise
             // something like Option<Box<dyn Error>> gets shown as just "Option".
             p.name.clone()
-        },
-        DynTrait(dt) => "dyn ".to_owned() + &dt.traits.iter().map(|t| t.trait_.name.clone()).collect::<Vec<_>>().join(" + "),
+        }
+        DynTrait(dt) => {
+            "dyn ".to_owned()
+                + &dt
+                    .traits
+                    .iter()
+                    .map(|t| t.trait_.name.clone())
+                    .collect::<Vec<_>>()
+                    .join(" + ")
+        }
         Generic(g) => g.to_owned(),
         Primitive(p) => p.to_owned(),
         FunctionPointer(fp) => {
-            let args = fp.decl.inputs.iter()
+            let args = fp
+                .decl
+                .inputs
+                .iter()
                 .map(|(name, ty)| format!("{name}: {}", type_label(ty)))
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -207,14 +216,17 @@ fn type_label(ty: &rustdoc_types::Type) -> String {
                 None => String::new(),
             };
             format!("fn({args}){ret}")
-        },
-        Tuple(types) => format!("({})",
-            types.iter().map(type_label).collect::<Vec<_>>().join(", ")),
+        }
+        Tuple(types) => format!(
+            "({})",
+            types.iter().map(type_label).collect::<Vec<_>>().join(", ")
+        ),
         Slice(ty) => format!("&[{}]", type_label(ty)),
         Array { type_, len } => format!("[{}; {len}]", type_label(type_)),
         ImplTrait(t) => {
             use rustdoc_types::GenericBound::*;
-            format!("impl {}",
+            format!(
+                "impl {}",
                 t.iter()
                     .map(|g| match g {
                         TraitBound { trait_, .. } => trait_.name.as_str(),
@@ -226,25 +238,36 @@ fn type_label(ty: &rustdoc_types::Type) -> String {
         }
         Infer => "_".to_owned(),
         RawPointer { mutable, type_ } => {
-            format!("*{} {}",
+            format!(
+                "*{} {}",
                 if *mutable { "mut" } else { "const" },
                 type_label(type_),
             )
-        },
-        BorrowedRef { lifetime, mutable, type_ } => {
-            format!("&{}{} {}",
+        }
+        BorrowedRef {
+            lifetime,
+            mutable,
+            type_,
+        } => {
+            format!(
+                "&{}{} {}",
                 lifetime.as_deref().unwrap_or_default(),
                 if *mutable { "mut" } else { "" },
                 type_label(type_),
             )
-        },
-        QualifiedPath { name, args:_ , self_type, trait_ } => {
+        }
+        QualifiedPath {
+            name,
+            args: _,
+            self_type,
+            trait_,
+        } => {
             if let Some(trait_) = trait_ {
                 format!("<{} as {}>::{name}", type_label(self_type), trait_.name)
             } else {
                 format!("{}::{name}", type_label(self_type))
             }
-        },
+        }
     }
 }
 

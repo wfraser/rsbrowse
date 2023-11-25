@@ -1,7 +1,8 @@
-#[macro_use] extern crate lazy_static;
+#[macro_use]
+extern crate lazy_static;
 
 use rsbrowse::analysis::Analysis;
-use rsbrowse::browser_rls::{RlsBrowser, Item};
+use rsbrowse::browser_rls::{Item, RlsBrowser};
 use rsbrowse::browser_trait::Browser;
 use std::path::Path;
 
@@ -23,7 +24,7 @@ lazy_static! {
     };
 }
 
-fn iter_labels<T>(items: &[(String, T)]) -> impl Iterator<Item=&str> {
+fn iter_labels<T>(items: &[(String, T)]) -> impl Iterator<Item = &str> {
     items.iter().map(|(label, _)| label.as_str())
 }
 
@@ -38,7 +39,8 @@ impl<'a, T> VecExt<'a, T> for Vec<(String, T)> {
         iter_labels(self).any(|label| label == s)
     }
     fn by_label(&'a self, s: &str) -> &'a T {
-        &self.iter()
+        &self
+            .iter()
             .find(|(label, _)| label == s)
             .expect("not found")
             .1
@@ -51,33 +53,20 @@ impl<'a, T> VecExt<'a, T> for Vec<(String, T)> {
 fn items_eq(a: &Item, b: &Item) -> bool {
     match a {
         Item::Root => matches!(b, Item::Root),
-        Item::Def(a) => {
-            match b {
-                Item::Def(b) => {
-                    a.id == b.id
-                }
-                _ => false,
+        Item::Def(a) => match b {
+            Item::Def(b) => a.id == b.id,
+            _ => false,
+        },
+        Item::ExternalDef(cr_a, a) => match b {
+            Item::ExternalDef(cr_b, b) => cr_a.disambiguator == cr_b.disambiguator && a.id == b.id,
+            _ => false,
+        },
+        Item::Impl(a) => match b {
+            Item::Impl(b) => {
+                a.impl_id == b.impl_id && a.trait_id == b.trait_id && a.impl_on == b.impl_on
             }
-        }
-        Item::ExternalDef(cr_a, a) => {
-            match b {
-                Item::ExternalDef(cr_b, b) => {
-                    cr_a.disambiguator == cr_b.disambiguator
-                        && a.id == b.id
-                }
-                _ => false,
-            }
-        }
-        Item::Impl(a) => {
-            match b {
-                Item::Impl(b) => {
-                    a.impl_id == b.impl_id
-                        && a.trait_id == b.trait_id
-                        && a.impl_on == b.impl_on
-                }
-                _ => false,
-            }
-        }
+            _ => false,
+        },
     }
 }
 
@@ -97,19 +86,20 @@ impl ItemExt for Item {
 #[test]
 fn list_items() {
     let crates = BROWSER.list_crates();
-    assert_eq!(crates.labels(), &["externcrate", "testcrate", "testcrate (bin)"]);
+    assert_eq!(
+        crates.labels(),
+        &["externcrate", "testcrate", "testcrate (bin)"]
+    );
 
     let crate_id = crates.by_label("testcrate");
 
     // Pane 1
 
     let root_items = BROWSER.list_items(&crate_id, &Item::Root);
-    assert_eq!(root_items.labels(), &[
-        "mod x",
-        "mod y",
-        "mod z",
-        "trait Trait",
-    ]);
+    assert_eq!(
+        root_items.labels(),
+        &["mod x", "mod y", "mod z", "trait Trait",]
+    );
 
     // Pane 2
 
@@ -128,10 +118,12 @@ fn list_items() {
     // Assert that the three "struct S" defs are not the same.
     assert!(!items_eq(
         mod_x_items.by_label("struct S"),
-        mod_y_items.by_label("struct S")));
+        mod_y_items.by_label("struct S")
+    ));
     assert!(!items_eq(
         mod_y_items.by_label("struct S"),
-        mod_z_items.by_label("struct S")));
+        mod_z_items.by_label("struct S")
+    ));
 
     let trait_trait = root_items.by_label("trait Trait");
     let trait_items = BROWSER.list_items(crate_id, trait_trait);
@@ -141,11 +133,14 @@ fn list_items() {
 
     let x_s = mod_x_items.by_label("struct S");
     let x_s_items = BROWSER.list_items(crate_id, x_s);
-    assert_eq!(x_s_items.labels(), &[
-        "impl Self",
-        "impl core::fmt::Display",
-        "impl externcrate::ExternTrait",
-    ]);
+    assert_eq!(
+        x_s_items.labels(),
+        &[
+            "impl Self",
+            "impl core::fmt::Display",
+            "impl externcrate::ExternTrait",
+        ]
+    );
 
     let y_s = mod_y_items.by_label("struct S");
     let y_s_items = BROWSER.list_items(crate_id, y_s);
@@ -163,10 +158,10 @@ fn list_items() {
 
     let x_s_extern = x_s_items.by_label("impl externcrate::ExternTrait");
     let x_s_extern_items = BROWSER.list_items(crate_id, x_s_extern);
-    assert_eq!(x_s_extern_items.labels(), &[
-        "fn default_method (externcrate)",
-        "fn required_method",
-    ]);
+    assert_eq!(
+        x_s_extern_items.labels(),
+        &["fn default_method (externcrate)", "fn required_method",]
+    );
 
     let y_s_self = y_s_items.by_label("impl Self");
     let y_s_self_items = BROWSER.list_items(crate_id, y_s_self);
@@ -177,17 +172,28 @@ fn list_items() {
     assert_eq!(y_s_trait_items.labels(), &["fn method"]);
 
     // It has to be the overridden one, not the default on the trait (which is "::Trait::method").
-    assert_eq!(y_s_trait_items[0].1.unwrap_def().qualname, "<S as Trait>::method");
+    assert_eq!(
+        y_s_trait_items[0].1.unwrap_def().qualname,
+        "<S as Trait>::method"
+    );
 
     let z_s_trait = z_s_items.by_label("impl ::Trait");
     let z_s_trait_items = BROWSER.list_items(crate_id, z_s_trait);
     assert_eq!(z_s_trait_items.labels(), &["fn method"]);
 
     // This one inherits the default.
-    assert_eq!(z_s_trait_items[0].1.unwrap_def().qualname, "::Trait::method");
+    assert_eq!(
+        z_s_trait_items[0].1.unwrap_def().qualname,
+        "::Trait::method"
+    );
 
     // Pane 5 (all empty)
-    for stuff in &[&x_s_self_items, &y_s_self_items, &y_s_trait_items, &z_s_trait_items] {
+    for stuff in &[
+        &x_s_self_items,
+        &y_s_self_items,
+        &y_s_trait_items,
+        &z_s_trait_items,
+    ] {
         for (_label, item) in *stuff {
             assert!(BROWSER.list_items(crate_id, &item).is_empty());
         }

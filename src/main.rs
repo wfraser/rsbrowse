@@ -10,7 +10,10 @@ struct Arguments {
 }
 
 fn usage() {
-    eprintln!("usage: {} <cargo workspace path>", std::env::args().next().unwrap());
+    eprintln!(
+        "usage: {} <cargo workspace path>",
+        std::env::args().next().unwrap()
+    );
 }
 
 fn parse_args() -> Option<Arguments> {
@@ -41,11 +44,10 @@ fn parse_args() -> Option<Arguments> {
 }
 
 fn main() {
-    let args = parse_args()
-        .unwrap_or_else(|| {
-            usage();
-            std::process::exit(1);
-        });
+    let args = parse_args().unwrap_or_else(|| {
+        usage();
+        std::process::exit(1);
+    });
 
     eprintln!("Running Cargo to generate analysis data...");
     Analysis::generate(&args.workspace_path, &args.compiler).unwrap();

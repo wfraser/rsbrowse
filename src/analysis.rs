@@ -24,11 +24,14 @@ impl Analysis {
             .arg("--target-dir")
             .arg(Path::new("target").join(SUBDIR))
             .arg("--workspace")
-            .env("RUSTDOCFLAGS", "-Zunstable-options \
+            .env(
+                "RUSTDOCFLAGS",
+                "-Zunstable-options \
                 --output-format=json \
                 --document-private-items \
                 --document-hidden-items \
-                ")
+                ",
+            )
             .current_dir(workspace_path)
             .status()
             .context("failed to run 'cargo rustdoc'")?;
@@ -44,24 +47,31 @@ impl Analysis {
     }
 
     pub fn load(workspace_path: impl Into<PathBuf>) -> anyhow::Result<Self> {
-        let root: PathBuf = workspace_path.into().join("target").join(SUBDIR).join("doc");
+        let root: PathBuf = workspace_path
+            .into()
+            .join("target")
+            .join(SUBDIR)
+            .join("doc");
         let mut paths = vec![];
         for res in fs::read_dir(root)? {
             let entry = res?;
             if entry.file_name().as_encoded_bytes().ends_with(b".json") {
                 let path = entry.path();
-                let crate_name = path.file_stem().unwrap().to_str()
+                let crate_name = path
+                    .file_stem()
+                    .unwrap()
+                    .to_str()
                     .ok_or_else(|| anyhow::anyhow!("{path:?} isn't utf-8"))?
                     .to_owned();
                 paths.push((crate_name, path));
             }
         }
 
-        let crates = paths.into_par_iter()
+        let crates = paths
+            .into_par_iter()
             .map(|(crate_name, path)| {
                 println!("reading {path:?}");
-                let data: rustdoc_types::Crate = parse_json(&path)
-                    .with_context(|| path.display().to_string())?;
+                let data = parse_json(&path).with_context(|| path.display().to_string())?;
                 Ok((crate_name, data))
             })
             .collect::<anyhow::Result<HashMap<_, _>>>()?;
@@ -69,7 +79,7 @@ impl Analysis {
         Ok(Self { crates })
     }
 
-    pub fn crate_ids(&self) -> impl Iterator<Item=CrateId> + '_ {
+    pub fn crate_ids(&self) -> impl Iterator<Item = CrateId> + '_ {
         /*let mut ids = vec![];
 
         for c in self.crates.values() {
@@ -87,24 +97,25 @@ impl Analysis {
             ids.push(CrateId { name });
         }*/
 
-        self.crates.values()
+        self.crates
+            .values()
             .flat_map(|crate_| &crate_.index)
-            .filter_map(|(_id, item)| {
-                match &item.inner {
-                    rustdoc_types::ItemEnum::Module(m) if m.is_crate && item.crate_id == 0 => {
-                        let name = item.name.clone().expect("crate module should have a name");
-                        Some(CrateId { name })
-                    }
-                    _ => None
+            .filter_map(|(_id, item)| match &item.inner {
+                rustdoc_types::ItemEnum::Module(m) if m.is_crate && item.crate_id == 0 => {
+                    let name = item.name.clone().expect("crate module should have a name");
+                    Some(CrateId { name })
                 }
+                _ => None,
             })
 
         //ids.into_iter()
     }
 
-    pub fn items<'a>(&'a self, crate_id: &'a CrateId, parent_id: Option<Id>)
-        -> impl Iterator<Item = &'a rustdoc_types::Item> + 'a
-    {
+    pub fn items<'a>(
+        &'a self,
+        crate_id: &'a CrateId,
+        parent_id: Option<Id>,
+    ) -> impl Iterator<Item = &'a rustdoc_types::Item> + 'a {
         let parent_id = parent_id.unwrap_or(self.crates[&crate_id.name].root.clone());
         let parent = &self.crates[&crate_id.name].index[&parent_id];
 
@@ -117,7 +128,9 @@ impl Analysis {
             Struct(s) => {
                 let fields = match &s.kind {
                     rustdoc_types::StructKind::Unit => vec![],
-                    rustdoc_types::StructKind::Tuple(t) => t.iter().filter_map(|x| x.as_ref()).cloned().collect(),
+                    rustdoc_types::StructKind::Tuple(t) => {
+                        t.iter().filter_map(|x| x.as_ref()).cloned().collect()
+                    }
                     rustdoc_types::StructKind::Plain { fields, .. } => fields.clone(),
                 };
                 [&fields[..], &s.impls[..]].concat()
@@ -128,7 +141,7 @@ impl Analysis {
                 rustdoc_types::VariantKind::Plain => vec![],
                 rustdoc_types::VariantKind::Tuple(t) => {
                     t.iter().filter_map(|id| id.clone()).collect()
-                },
+                }
                 rustdoc_types::VariantKind::Struct { fields, .. } => fields.clone(),
             },
             Function(_) => vec![],
@@ -144,7 +157,7 @@ impl Analysis {
                     items.push(trait_.id.clone());
                 }
                 items
-            },
+            }
             TypeAlias(_) => vec![],
             OpaqueTy(_) => vec![],
             Constant(_) => vec![],
@@ -157,7 +170,9 @@ impl Analysis {
             AssocType { .. } => vec![],
         };
 
-        self.crates[&crate_id.name].index.iter()
+        self.crates[&crate_id.name]
+            .index
+            .iter()
             .filter_map(move |(id, item)| {
                 if children.contains(id) {
                     Some(item)
@@ -185,7 +200,8 @@ fn type_ids(ty: &rustdoc_types::Type) -> Vec<Id> {
         Tuple(types) => types.iter().map(type_ids).flatten().collect(),
         Slice(ty) => type_ids(ty),
         Array { type_, .. } => type_ids(type_),
-        ImplTrait(generics) => generics.iter()
+        ImplTrait(generics) => generics
+            .iter()
             .filter_map(|g| match g {
                 rustdoc_types::GenericBound::TraitBound { trait_, .. } => Some(trait_.id.clone()),
                 rustdoc_types::GenericBound::Outlives(_) => None,
@@ -194,7 +210,9 @@ fn type_ids(ty: &rustdoc_types::Type) -> Vec<Id> {
         Infer => vec![],
         RawPointer { type_, .. } => type_ids(type_),
         BorrowedRef { type_, .. } => type_ids(type_),
-        QualifiedPath { self_type, trait_, .. } => {
+        QualifiedPath {
+            self_type, trait_, ..
+        } => {
             let from_self = type_ids(&self_type);
             if let Some(t) = trait_ {
                 [&from_self[..], &[t.id.clone()]].concat()
