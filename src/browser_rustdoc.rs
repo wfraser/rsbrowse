@@ -133,7 +133,7 @@ fn item_label(item: &rustdoc_types::Item) -> String {
         Import(i) => return format!("use {}", i.source), // TODO: globs
         Union(_) => "union",
         Struct(_) => "struct",
-        StructField(f) => return format!("{}: {}", name, type_label(&f)),
+        StructField(f) => return format!("{}: {}", name, type_label(f)),
         Enum(_) => "enum",
         Variant(_) => "enum variant",
         Function(_) => "fn", // TODO: include signature?
@@ -157,14 +157,14 @@ fn item_label(item: &rustdoc_types::Item) -> String {
         Primitive(_) => "",
         AssocConst { type_, default } => {
             return if let Some(default) = default {
-                format!("const {name}: {} = {default}", type_label(&type_))
+                format!("const {name}: {} = {default}", type_label(type_))
             } else {
-                format!("const {name}: {}", type_label(&type_))
+                format!("const {name}: {}", type_label(type_))
             }
         }
         AssocType { default, .. } => {
             return if let Some(default) = default {
-                format!("type {name} = {}", type_label(&default))
+                format!("type {name} = {}", type_label(default))
             } else {
                 format!("type {name}")
             };
@@ -186,13 +186,13 @@ fn type_label(ty: &rustdoc_types::Type) -> String {
                 .collect::<Vec<_>>()
                 .join(", ");
             let ret = match &fp.decl.output {
-                Some(ty) => format!(" -> {}", type_label(&ty)),
+                Some(ty) => format!(" -> {}", type_label(ty)),
                 None => String::new(),
             };
             format!("fn({args}){ret}")
         },
         Tuple(types) => format!("({})",
-            types.iter().map(|ty| type_label(ty)).collect::<Vec<_>>().join(", ")),
+            types.iter().map(type_label).collect::<Vec<_>>().join(", ")),
         Slice(ty) => format!("&[{}]", type_label(ty)),
         Array { type_, len } => format!("[{}; {len}]", type_label(type_)),
         ImplTrait(_) => todo!(),

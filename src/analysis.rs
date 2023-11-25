@@ -44,7 +44,7 @@ impl Analysis {
     pub fn load(workspace_path: impl Into<PathBuf>) -> anyhow::Result<Self> {
         let root: PathBuf = workspace_path.into().join("target").join(SUBDIR).join("doc");
         let mut crates = HashMap::new();
-        for res in fs::read_dir(&root)? {
+        for res in fs::read_dir(root)? {
             let entry = res?;
             if entry.file_name().as_encoded_bytes().ends_with(b".json") {
                 let path = entry.path();
