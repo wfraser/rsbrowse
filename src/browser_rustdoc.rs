@@ -195,11 +195,33 @@ fn type_label(ty: &rustdoc_types::Type) -> String {
             types.iter().map(type_label).collect::<Vec<_>>().join(", ")),
         Slice(ty) => format!("&[{}]", type_label(ty)),
         Array { type_, len } => format!("[{}; {len}]", type_label(type_)),
-        ImplTrait(_) => todo!(),
+        ImplTrait(t) => {
+            use rustdoc_types::GenericBound::*;
+            format!("impl {}",
+                t.iter()
+                    .map(|g| match g {
+                        TraitBound { trait_, .. } => trait_.name.as_str(),
+                        Outlives(o) => o.as_str(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" + "),
+            )
+        }
         Infer => "_".to_owned(),
-        RawPointer { mutable, type_ } => todo!(),
-        BorrowedRef { lifetime, mutable, type_ } => todo!(),
-        QualifiedPath { name, args, self_type, trait_ } => {
+        RawPointer { mutable, type_ } => {
+            format!("*{} {}",
+                if *mutable { "mut" } else { "const" },
+                type_label(type_),
+            )
+        },
+        BorrowedRef { lifetime, mutable, type_ } => {
+            format!("&{}{} {}",
+                lifetime.as_deref().unwrap_or_default(),
+                if *mutable { "mut" } else { "" },
+                type_label(type_),
+            )
+        },
+        QualifiedPath { name, args:_ , self_type, trait_ } => {
             if let Some(trait_) = trait_ {
                 format!("<{} as {}>::{name}", type_label(self_type), trait_.name)
             } else {
