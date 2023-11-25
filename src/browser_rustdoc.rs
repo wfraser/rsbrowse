@@ -36,6 +36,19 @@ impl Browser for RustdocBrowser {
         };
         
         let mut items = self.analysis.items(crate_id, parent_id)
+            .filter(|item| {
+                // Remove the clutter of automatically derived, blanket, and synthetic trait impls.
+                use rustdoc_types::ItemEnum::*;
+                if item.attrs.iter()
+                    .any(|a| a == "#[automatically_derived]")
+                {
+                    return false;
+                }
+                match &item.inner {
+                    Impl(i) => i.blanket_impl.is_none() && !i.synthetic,
+                    _ => true,
+                }
+            })
             .map(|item| (item_label(item), Item::Item(item.clone())))
             .collect::<Vec<_>>();
         sort_by_label(&mut items);
