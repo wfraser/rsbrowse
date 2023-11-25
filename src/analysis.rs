@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 use std::fs::{self, File};
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::Context;
+use rayon::prelude::*;
 
 pub type Id = rustdoc_types::Id;
 
@@ -43,7 +45,7 @@ impl Analysis {
 
     pub fn load(workspace_path: impl Into<PathBuf>) -> anyhow::Result<Self> {
         let root: PathBuf = workspace_path.into().join("target").join(SUBDIR).join("doc");
-        let mut crates = HashMap::new();
+        let mut paths = vec![];
         for res in fs::read_dir(root)? {
             let entry = res?;
             if entry.file_name().as_encoded_bytes().ends_with(b".json") {
@@ -51,12 +53,19 @@ impl Analysis {
                 let crate_name = path.file_stem().unwrap().to_str()
                     .ok_or_else(|| anyhow::anyhow!("{path:?} isn't utf-8"))?
                     .to_owned();
-                println!("reading {path:?}");
-                let data = parse_json(&path)
-                    .with_context(|| path.display().to_string())?;
-                crates.insert(crate_name, data);
+                paths.push((crate_name, path));
             }
         }
+
+        let crates = paths.into_par_iter()
+            .map(|(crate_name, path)| {
+                println!("reading {path:?}");
+                let data: rustdoc_types::Crate = parse_json(&path)
+                    .with_context(|| path.display().to_string())?;
+                Ok((crate_name, data))
+            })
+            .collect::<anyhow::Result<HashMap<_, _>>>()?;
+
         Ok(Self { crates })
     }
 
@@ -159,8 +168,8 @@ impl Analysis {
 
 fn parse_json(p: &Path) -> anyhow::Result<rustdoc_types::Crate> {
     let f = File::open(p)?;
-    let krate = serde_json::from_reader(f)?;
-    Ok(krate)
+    let data = serde_json::from_reader(BufReader::new(f))?;
+    Ok(data)
 }
 
 #[derive(Debug, Clone)]
