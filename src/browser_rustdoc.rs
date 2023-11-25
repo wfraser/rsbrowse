@@ -46,7 +46,7 @@ impl Browser for RustdocBrowser {
     fn get_info(&self, crate_id: &CrateId, item: &Item) -> String {
         let mut txt = String::new();
         match item {
-            Item::Item(item) /*| Item::ExternalDef(_, def)*/ => {
+            Item::Item(item) => {
                 if let Some(docs) = &item.docs {
                     txt += &docs;
                     txt.push('\n');
@@ -70,14 +70,10 @@ impl Browser for RustdocBrowser {
 
     fn get_source(&self, item: &Item) -> (String, Option<usize>) {
         match item {
-            Item::Item(item) /*| Item::ExternalDef(_, def)*/ => {
+            Item::Item(item) => {
                 let (txt, line) = get_source_for_item(item);
                 (txt, Some(line))
             }
-            /*Item::Impl(imp) => {
-                let id = imp.trait_id.unwrap_or(imp.impl_on);
-                (format!("source listing unimplemented for impls. impl ID = {id:?}"), None)
-            }*/
             Item::Root => (String::new(), None),
         }
     }
@@ -139,10 +135,10 @@ fn item_label(item: &rustdoc_types::Item) -> String {
         Struct(_) => "struct",
         StructField(f) => return format!("{}: {}", name, type_label(&f)),
         Enum(_) => "enum",
-        Variant(_) => todo!(),
-        Function(_) => "fn", // TODO: include signature
+        Variant(_) => "enum variant",
+        Function(_) => "fn", // TODO: include signature?
         Trait(_) => "trait",
-        TraitAlias(_) => todo!(),
+        TraitAlias(_) => "trait alias",
         Impl(i) => {
             let name = type_label(&i.for_);
             return if let Some(trait_) = &i.trait_ {
@@ -152,7 +148,7 @@ fn item_label(item: &rustdoc_types::Item) -> String {
             };
         }
         TypeAlias(_) => "type",
-        OpaqueTy(_) => todo!(),
+        OpaqueTy(_) => "opaque type",
         Constant(c) => return format!("const {}: {}", name, c.expr),
         Static(s) => return format!("static {}: {}", name, s.expr),
         ForeignType => "extern type",
@@ -217,10 +213,7 @@ fn type_label(ty: &rustdoc_types::Type) -> String {
 #[derive(Debug, Clone)]
 pub enum Item {
     Root,
-    //Def(rls_data::Def),
-    Item(rustdoc_types::Item)
-    //ExternalDef(CrateId, rls_data::Def),
-    //Impl(ImplDetails),
+    Item(rustdoc_types::Item),
 }
 
 impl browser_trait::Item for Item {

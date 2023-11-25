@@ -1,5 +1,5 @@
+use std::collections::HashMap;
 use std::fs::{self, File};
-use std::iter;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -11,21 +11,22 @@ pub type Id = rustdoc_types::Id;
 const SUBDIR: &str = "rsbrowse";
 
 pub struct Analysis {
-    pub krate: rustdoc_types::Crate,
+    pub crates: HashMap<String, rustdoc_types::Crate>,
 }
 
 impl Analysis {
     pub fn generate(workspace_path: impl AsRef<Path>, compiler: &str) -> anyhow::Result<()> {
         let cargo_status = Command::new("cargo")
             .arg(format!("+{compiler}"))
-            .arg("rustdoc")
+            .arg("doc")
             .arg("--target-dir")
             .arg(Path::new("target").join(SUBDIR))
-            .arg("--")
-            .arg("-Zunstable-options")
-            .arg("--output-format=json")
-            .arg("--document-private-items")
-            .arg("--document-hidden-items")
+            .arg("--workspace")
+            .env("RUSTDOCFLAGS", "-Zunstable-options \
+                --output-format=json \
+                --document-private-items \
+                --document-hidden-items \
+                ")
             .current_dir(workspace_path)
             .status()
             .context("failed to run 'cargo rustdoc'")?;
@@ -42,62 +43,61 @@ impl Analysis {
 
     pub fn load(workspace_path: impl Into<PathBuf>) -> anyhow::Result<Self> {
         let root: PathBuf = workspace_path.into().join("target").join(SUBDIR).join("doc");
-        let json_path = fs::read_dir(&root)?
-            /*.try_find(|entry| {
-                Ok(entry?.file_name().as_encoded_bytes().ends_with(b".json"))
-            })?*/
-            .find_map(|r| {
-                let entry = match r {
-                    Ok(v) => v,
-                    Err(e) => return Some(Err(e)),
-                };
-                if entry.file_name().as_encoded_bytes().ends_with(b".json") {
-                    Some(Ok(entry))
-                } else {
-                    None
-                }
-            })
-            .transpose()?
-            .ok_or_else(|| anyhow::anyhow!("no json files found"))?
-            .path();
-        let krate = parse_json(&json_path)
-            .with_context(|| json_path.display().to_string())?;
-        Ok(Self { krate })
+        let mut crates = HashMap::new();
+        for res in fs::read_dir(&root)? {
+            let entry = res?;
+            if entry.file_name().as_encoded_bytes().ends_with(b".json") {
+                let path = entry.path();
+                let crate_name = path.file_stem().unwrap().to_str()
+                    .ok_or_else(|| anyhow::anyhow!("{path:?} isn't utf-8"))?
+                    .to_owned();
+                println!("reading {path:?}");
+                let data = parse_json(&path)
+                    .with_context(|| path.display().to_string())?;
+                crates.insert(crate_name, data);
+            }
+        }
+        Ok(Self { crates })
     }
 
     pub fn crate_ids(&self) -> impl Iterator<Item=CrateId> + '_ {
-        let my_name = self.krate.index.iter()
-            .find_map(|(_id, item)| {
+        /*let mut ids = vec![];
+
+        for c in self.crates.values() {
+            let name = c.index.iter()
+                .find_map(|(_id, item)| {
+                    match &item.inner {
+                        rustdoc_types::ItemEnum::Module(m) if m.is_crate && item.crate_id == 0 => {
+                            Some(item.name.clone().expect("crate module should have a name"))
+                        }
+                        _ => None
+                    }
+                })
+                .expect("should have an index item for the local crate");
+
+            ids.push(CrateId { name });
+        }*/
+
+        self.crates.values()
+            .flat_map(|crate_| &crate_.index)
+            .filter_map(|(_id, item)| {
                 match &item.inner {
                     rustdoc_types::ItemEnum::Module(m) if m.is_crate && item.crate_id == 0 => {
-                        Some(item.name.clone().expect("crate module should have a name"))
+                        let name = item.name.clone().expect("crate module should have a name");
+                        Some(CrateId { name })
                     }
                     _ => None
                 }
             })
-            .expect("should have an index item for the local crate");
 
-        let myself = CrateId {
-            name: my_name,
-            id: 0,
-        };
-
-        let others = self.krate.external_crates.iter()
-            .map(|(&id, ext)| {
-                CrateId {
-                    name: ext.name.clone(),
-                    id,
-                }
-            });
-
-        iter::once(myself).chain(others)
+        //ids.into_iter()
     }
 
     pub fn items<'a>(&'a self, crate_id: &'a CrateId, parent_id: Option<Id>)
         -> impl Iterator<Item = &'a rustdoc_types::Item> + 'a
     {
-        let parent_id = parent_id.unwrap_or(self.krate.root.clone());
-        let parent = &self.krate.index[&parent_id];
+        let parent_id = parent_id.unwrap_or(self.crates[&crate_id.name].root.clone());
+        let parent = &self.crates[&crate_id.name].index[&parent_id];
 
         use rustdoc_types::ItemEnum::*;
         let children = match &parent.inner {
@@ -115,14 +115,25 @@ impl Analysis {
             }
             StructField(_) => vec![],
             Enum(e) => [&e.variants[..], &e.impls[..]].concat(),
-            Variant(_) => vec![],
+            Variant(v) => match &v.kind {
+                rustdoc_types::VariantKind::Plain => vec![],
+                rustdoc_types::VariantKind::Tuple(t) => t.iter().filter_map(|id| id.clone()).collect(),
+                rustdoc_types::VariantKind::Struct { fields, .. } => fields.clone(),
+            },
             Function(_) => vec![],
             Trait(t) => {
-                // TODO: also include impls?
+                // TODO: also find impls?
                 t.items.clone()
             }
             TraitAlias(_) => vec![],
-            Impl(i) => i.items.clone(),
+            Impl(i) => {
+                let mut items = i.items.clone();
+                // Add a reference to the trait itself too if it's not an inherent impl:
+                if let Some(trait_) = &i.trait_ {
+                    items.push(trait_.id.clone());
+                }
+                items
+            },
             TypeAlias(_) => vec![],
             OpaqueTy(_) => vec![],
             Constant(_) => vec![],
@@ -135,7 +146,7 @@ impl Analysis {
             AssocType { .. } => vec![],
         };
 
-        self.krate.index.iter()
+        self.crates[&crate_id.name].index.iter()
             .filter_map(move |(id, item)| {
                 if children.contains(id) {
                     Some(item)
@@ -155,7 +166,7 @@ fn parse_json(p: &Path) -> anyhow::Result<rustdoc_types::Crate> {
 #[derive(Debug, Clone)]
 pub struct CrateId {
     pub name: String,
-    pub id: u32,
+    //pub id: u32,
 }
 
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
