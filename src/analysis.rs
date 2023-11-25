@@ -122,11 +122,13 @@ impl Analysis {
                 };
                 [&fields[..], &s.impls[..]].concat()
             }
-            StructField(_) => vec![],
+            StructField(ty) => type_ids(ty),
             Enum(e) => [&e.variants[..], &e.impls[..]].concat(),
             Variant(v) => match &v.kind {
                 rustdoc_types::VariantKind::Plain => vec![],
-                rustdoc_types::VariantKind::Tuple(t) => t.iter().filter_map(|id| id.clone()).collect(),
+                rustdoc_types::VariantKind::Tuple(t) => {
+                    t.iter().filter_map(|id| id.clone()).collect()
+                },
                 rustdoc_types::VariantKind::Struct { fields, .. } => fields.clone(),
             },
             Function(_) => vec![],
@@ -170,6 +172,37 @@ fn parse_json(p: &Path) -> anyhow::Result<rustdoc_types::Crate> {
     let f = File::open(p)?;
     let data = serde_json::from_reader(BufReader::new(f))?;
     Ok(data)
+}
+
+fn type_ids(ty: &rustdoc_types::Type) -> Vec<Id> {
+    use rustdoc_types::Type::*;
+    match ty {
+        ResolvedPath(path) => vec![path.id.clone()],
+        DynTrait(dt) => dt.traits.iter().map(|t| t.trait_.id.clone()).collect(),
+        Generic(_) => vec![],
+        Primitive(_) => vec![],
+        FunctionPointer(_) => vec![],
+        Tuple(types) => types.iter().map(type_ids).flatten().collect(),
+        Slice(ty) => type_ids(ty),
+        Array { type_, .. } => type_ids(type_),
+        ImplTrait(generics) => generics.iter()
+            .filter_map(|g| match g {
+                rustdoc_types::GenericBound::TraitBound { trait_, .. } => Some(trait_.id.clone()),
+                rustdoc_types::GenericBound::Outlives(_) => None,
+            })
+            .collect(),
+        Infer => vec![],
+        RawPointer { type_, .. } => type_ids(type_),
+        BorrowedRef { type_, .. } => type_ids(type_),
+        QualifiedPath { self_type, trait_, .. } => {
+            let from_self = type_ids(&self_type);
+            if let Some(t) = trait_ {
+                [&from_self[..], &[t.id.clone()]].concat()
+            } else {
+                from_self
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

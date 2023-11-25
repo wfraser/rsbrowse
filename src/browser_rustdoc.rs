@@ -176,7 +176,11 @@ fn item_label(item: &rustdoc_types::Item) -> String {
 fn type_label(ty: &rustdoc_types::Type) -> String {
     use rustdoc_types::Type::*;
     match ty {
-        ResolvedPath(p) => p.name.clone(),
+        ResolvedPath(p) => {
+            // TODO: needs to also include the generic params, otherwise
+            // something like Option<Box<dyn Error>> gets shown as just "Option".
+            p.name.clone()
+        },
         DynTrait(dt) => "dyn ".to_owned() + &dt.traits.iter().map(|t| t.trait_.name.clone()).collect::<Vec<_>>().join(" + "),
         Generic(g) => g.to_owned(),
         Primitive(p) => p.to_owned(),
