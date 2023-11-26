@@ -2,6 +2,8 @@ pub mod x {
     pub struct S {
         pub int_field: i32,
         string_field: String,
+        opt_field: Option<Result<i32, std::io::Error>>,
+        fn_field: Box<dyn Fn(usize, String) -> Option<i32>>,
     }
 
     impl S {

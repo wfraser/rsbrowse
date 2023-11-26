@@ -17,7 +17,7 @@ impl RustdocBrowser {
         let prefix = match &item.inner {
             Module(_) => "mod",
             ExternCrate { name, .. } => return format!("extern crate {name}"),
-            Import(i) => return format!("use {}", i.source), // TODO: globs
+            Import(i) => return format!("use {}", i.source) + if i.glob { "::*" } else { "" },
             Union(_) => "union",
             Struct(_) => "struct",
             StructField(f) => return format!("{}: {}", name, type_label(f)),
@@ -42,8 +42,8 @@ impl RustdocBrowser {
             }
             TypeAlias(_) => "type",
             OpaqueTy(_) => "opaque type",
-            Constant(c) => return format!("const {}: {}", name, c.expr),
-            Static(s) => return format!("static {}: {}", name, s.expr),
+            Constant(c) => return format!("const {}: {}", name, type_label(&c.type_)),
+            Static(s) => return format!("static {}: {}", name, type_label(&s.type_)),
             ForeignType => "extern type",
             Macro(_) => "macro",
             ProcMacro(_) => "proc macro",
@@ -189,20 +189,74 @@ fn crate_label(id: &ItemId) -> String {
     id.crate_name().to_owned()
 }
 
+fn generic_label(g: &rustdoc_types::GenericArgs) -> String {
+    use rustdoc_types::{GenericArg, GenericArgs};
+    use std::borrow::Cow;
+    let mut s = String::new();
+    match g {
+        GenericArgs::AngleBracketed { args, bindings } => {
+            if args.is_empty() {
+                return s;
+            }
+            s.push('<');
+            s.push_str(
+                &args
+                    .iter()
+                    .map(|arg| match arg {
+                        GenericArg::Lifetime(s) => Cow::Borrowed(s.as_str()),
+                        GenericArg::Type(ty) => Cow::Owned(type_label(ty)),
+                        GenericArg::Const(c) => Cow::Owned(format!("{c:?}")),
+                        GenericArg::Infer => Cow::Borrowed("_"),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            );
+            // TODO: dunno what to do with these
+            s.push_str(
+                &bindings
+                    .iter()
+                    .map(|b| format!("{b:?}"))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            );
+            s.push('>');
+        }
+        GenericArgs::Parenthesized { inputs, output } => {
+            s.push('(');
+            s.push_str(&inputs.iter().map(type_label).collect::<Vec<_>>().join(", "));
+            s.push(')');
+            if let Some(ty) = output {
+                s.push_str(" -> ");
+                s.push_str(&type_label(ty));
+            }
+        }
+    }
+    s
+}
+
 fn type_label(ty: &rustdoc_types::Type) -> String {
     use rustdoc_types::Type::*;
     match ty {
         ResolvedPath(p) => {
-            // TODO: needs to also include the generic params, otherwise
-            // something like Option<Box<dyn Error>> gets shown as just "Option".
-            p.name.clone()
+            let mut s = p.name.clone();
+            if let Some(args) = &p.args {
+                s.push_str(&generic_label(args));
+            }
+            s
         }
         DynTrait(dt) => {
             "dyn ".to_owned()
                 + &dt
                     .traits
                     .iter()
-                    .map(|t| t.trait_.name.clone())
+                    .map(|t| {
+                        t.trait_.name.clone()
+                            + &t.trait_
+                                .args
+                                .as_ref()
+                                .map(|g| generic_label(g))
+                                .unwrap_or_default()
+                    })
                     .collect::<Vec<_>>()
                     .join(" + ")
         }
@@ -226,7 +280,7 @@ fn type_label(ty: &rustdoc_types::Type) -> String {
             "({})",
             types.iter().map(type_label).collect::<Vec<_>>().join(", ")
         ),
-        Slice(ty) => format!("&[{}]", type_label(ty)),
+        Slice(ty) => format!("[{}]", type_label(ty)),
         Array { type_, len } => format!("[{}; {len}]", type_label(type_)),
         ImplTrait(t) => {
             use rustdoc_types::GenericBound::*;
@@ -254,12 +308,16 @@ fn type_label(ty: &rustdoc_types::Type) -> String {
             mutable,
             type_,
         } => {
-            format!(
-                "&{}{} {}",
-                lifetime.as_deref().unwrap_or_default(),
-                if *mutable { "mut" } else { "" },
-                type_label(type_),
-            )
+            let mut s = "&".to_owned();
+            if let Some(l) = lifetime {
+                s.push_str(l);
+                s.push(' ');
+            }
+            if *mutable {
+                s.push_str("mut ");
+            }
+            s.push_str(&type_label(type_));
+            s
         }
         QualifiedPath {
             name,
