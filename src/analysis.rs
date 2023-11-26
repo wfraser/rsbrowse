@@ -158,7 +158,7 @@ impl Analysis {
                 }
                 items
             }
-            TypeAlias(_) => vec![],
+            TypeAlias(ty) => type_ids(&ty.type_),
             OpaqueTy(_) => vec![],
             Constant(_) => vec![],
             Static(_) => vec![],
@@ -170,16 +170,31 @@ impl Analysis {
             AssocType { .. } => vec![],
         };
 
-        self.crates[&crate_id.name]
-            .index
-            .iter()
-            .filter_map(move |(id, item)| {
-                if children.contains(id) {
-                    Some(item)
-                } else {
-                    None
-                }
-            })
+        children.into_iter().filter_map(move |id| {
+            if let Some(item) = self.crates[&crate_id.name].index.get(&id) {
+                Some(item)
+            } else {
+                let summary = self.crates[&crate_id.name].paths.get(&id)?;
+                let other_crate = &summary.path[0];
+                let other_id =
+                    self.crates
+                        .get(other_crate)?
+                        .paths
+                        .iter()
+                        .find_map(|(id, other)| {
+                            if other.path == summary.path {
+                                Some(id)
+                            } else {
+                                None
+                            }
+                        })?;
+                let item = self.crates[other_crate].index.get(other_id)?;
+                // FIXME: we need some way to tell callers that this item is in another crate
+                //Some(item)
+                eprintln!("child is in another crate ({other_crate}): {item:#?}");
+                None
+            }
+        })
     }
 }
 
