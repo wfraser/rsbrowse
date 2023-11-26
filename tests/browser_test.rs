@@ -1,13 +1,13 @@
 #[macro_use]
 extern crate lazy_static;
 
-use rsbrowse::analysis::Analysis;
-use rsbrowse::browser_rls::{Item, RlsBrowser};
+use rsbrowse::analysis::{Analysis, Item};
+use rsbrowse::browser_rustdoc::RustdocBrowser;
 use rsbrowse::browser_trait::Browser;
 use std::path::Path;
 
 lazy_static! {
-    static ref BROWSER: RlsBrowser = {
+    static ref BROWSER_STATIC: RustdocBrowser = {
         let path = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/testcrate"));
 
         let status = std::process::Command::new("cargo")
@@ -19,9 +19,10 @@ lazy_static! {
             panic!("Failed to run 'cargo clean' on test crate");
         }
 
-        Analysis::generate(&path).expect("Failed to generate analysis data.");
-        RlsBrowser::new(Analysis::load(&path))
+        Analysis::generate(&path, Some("nightly")).expect("Failed to generate analysis data.");
+        RustdocBrowser::new(Analysis::load(&path).expect("Failed to load analysis"))
     };
+    static ref BROWSER: &'static RustdocBrowser = &BROWSER_STATIC;
 }
 
 fn iter_labels<T>(items: &[(String, T)]) -> impl Iterator<Item = &str> {
@@ -53,32 +54,22 @@ impl<'a, T> VecExt<'a, T> for Vec<(String, T)> {
 fn items_eq(a: &Item, b: &Item) -> bool {
     match a {
         Item::Root => matches!(b, Item::Root),
-        Item::Def(a) => match b {
-            Item::Def(b) => a.id == b.id,
-            _ => false,
-        },
-        Item::ExternalDef(cr_a, a) => match b {
-            Item::ExternalDef(cr_b, b) => cr_a.disambiguator == cr_b.disambiguator && a.id == b.id,
-            _ => false,
-        },
-        Item::Impl(a) => match b {
-            Item::Impl(b) => {
-                a.impl_id == b.impl_id && a.trait_id == b.trait_id && a.impl_on == b.impl_on
-            }
+        Item::Item(a) => match b {
+            Item::Item(b) => a.id == b.id,
             _ => false,
         },
     }
 }
 
 trait ItemExt {
-    fn unwrap_def(&self) -> &rls_data::Def;
+    fn unwrap_item(&self) -> &rustdoc_types::Item;
 }
 
-impl ItemExt for Item {
-    fn unwrap_def(&self) -> &rls_data::Def {
+impl<'a> ItemExt for Item<'a> {
+    fn unwrap_item(&self) -> &rustdoc_types::Item {
         match self {
-            Item::Def(def) => def,
-            _ => panic!("not an Item::Def"),
+            Item::Item(item) => item,
+            _ => panic!("not an Item::Item"),
         }
     }
 }
@@ -86,16 +77,13 @@ impl ItemExt for Item {
 #[test]
 fn list_items() {
     let crates = BROWSER.list_crates();
-    assert_eq!(
-        crates.labels(),
-        &["externcrate", "testcrate", "testcrate (bin)"]
-    );
+    assert_eq!(crates.labels(), &["anyhow", "externcrate", "testcrate"]);
 
     let crate_id = crates.by_label("testcrate");
 
     // Pane 1
 
-    let root_items = BROWSER.list_items(&crate_id, &Item::Root);
+    let root_items = BROWSER.list_items(&crate_id);
     assert_eq!(
         root_items.labels(),
         &["mod x", "mod y", "mod z", "trait Trait",]
@@ -104,98 +92,78 @@ fn list_items() {
     // Pane 2
 
     let mod_x = root_items.by_label("mod x");
-    let mod_x_items = BROWSER.list_items(crate_id, mod_x);
+    let mod_x_items = BROWSER.list_items(&mod_x.0);
     assert_eq!(mod_x_items.labels(), &["struct S"]);
 
     let mod_y = root_items.by_label("mod y");
-    let mod_y_items = BROWSER.list_items(crate_id, mod_y);
+    let mod_y_items = BROWSER.list_items(&mod_y.0);
     assert_eq!(mod_y_items.labels(), &["struct S"]);
 
     let mod_z = root_items.by_label("mod z");
-    let mod_z_items = BROWSER.list_items(crate_id, mod_z);
+    let mod_z_items = BROWSER.list_items(&mod_z.0);
     assert_eq!(mod_z_items.labels(), &["struct S"]);
 
     // Assert that the three "struct S" defs are not the same.
     assert!(!items_eq(
-        mod_x_items.by_label("struct S"),
-        mod_y_items.by_label("struct S")
+        &mod_x_items.by_label("struct S").1,
+        &mod_y_items.by_label("struct S").1
     ));
     assert!(!items_eq(
-        mod_y_items.by_label("struct S"),
-        mod_z_items.by_label("struct S")
+        &mod_y_items.by_label("struct S").1,
+        &mod_z_items.by_label("struct S").1
     ));
 
     let trait_trait = root_items.by_label("trait Trait");
-    let trait_items = BROWSER.list_items(crate_id, trait_trait);
+    let trait_items = BROWSER.list_items(&trait_trait.0);
     assert_eq!(trait_items.labels(), &["fn method"]);
 
     // Pane 3
 
     let x_s = mod_x_items.by_label("struct S");
-    let x_s_items = BROWSER.list_items(crate_id, x_s);
+    let x_s_items = BROWSER.list_items(&x_s.0);
     assert_eq!(
         x_s_items.labels(),
         &[
             "impl Self",
             "impl core::fmt::Display",
             "impl externcrate::ExternTrait",
+            "int_field: i32",
+            "string_field: String",
         ]
     );
 
     let y_s = mod_y_items.by_label("struct S");
-    let y_s_items = BROWSER.list_items(crate_id, y_s);
-    assert_eq!(y_s_items.labels(), &["impl ::Trait", "impl Self"]);
+    let y_s_items = BROWSER.list_items(&y_s.0);
+    assert_eq!(y_s_items.labels(), &["impl Self", "impl Trait",]);
 
     let z_s = mod_z_items.by_label("struct S");
-    let z_s_items = BROWSER.list_items(crate_id, z_s);
-    assert_eq!(z_s_items.labels(), &["impl ::Trait"]);
+    let z_s_items = BROWSER.list_items(&z_s.0);
+    assert_eq!(z_s_items.labels(), &["impl Trait"]);
 
     // Pane 4
 
     let x_s_self = x_s_items.by_label("impl Self");
-    let x_s_self_items = BROWSER.list_items(crate_id, x_s_self);
+    let x_s_self_items = BROWSER.list_items(&x_s_self.0);
     assert_eq!(x_s_self_items.labels(), &["fn f"]);
 
     let x_s_extern = x_s_items.by_label("impl externcrate::ExternTrait");
-    let x_s_extern_items = BROWSER.list_items(crate_id, x_s_extern);
+    let x_s_extern_items = BROWSER.list_items(&x_s_extern.0);
     assert_eq!(
         x_s_extern_items.labels(),
-        &["fn default_method (externcrate)", "fn required_method",]
+        &["fn required_method", "trait ExternTrait"]
     );
 
     let y_s_self = y_s_items.by_label("impl Self");
-    let y_s_self_items = BROWSER.list_items(crate_id, y_s_self);
-    assert_eq!(y_s_self_items.labels(), &["fn g"]);
+    let y_s_self_items = BROWSER.list_items(&y_s_self.0);
+    assert_eq!(y_s_self_items.labels(), &["fn spoopadoop"]);
 
-    let y_s_trait = y_s_items.by_label("impl ::Trait");
-    let y_s_trait_items = BROWSER.list_items(crate_id, y_s_trait);
-    assert_eq!(y_s_trait_items.labels(), &["fn method"]);
+    let y_s_trait = y_s_items.by_label("impl Trait");
+    let y_s_trait_items = BROWSER.list_items(&y_s_trait.0);
+    // includes "fn method" because it overrides the default in the trait:
+    assert_eq!(y_s_trait_items.labels(), &["fn method", "trait Trait"]);
 
-    // It has to be the overridden one, not the default on the trait (which is "::Trait::method").
-    assert_eq!(
-        y_s_trait_items[0].1.unwrap_def().qualname,
-        "<S as Trait>::method"
-    );
-
-    let z_s_trait = z_s_items.by_label("impl ::Trait");
-    let z_s_trait_items = BROWSER.list_items(crate_id, z_s_trait);
-    assert_eq!(z_s_trait_items.labels(), &["fn method"]);
-
-    // This one inherits the default.
-    assert_eq!(
-        z_s_trait_items[0].1.unwrap_def().qualname,
-        "::Trait::method"
-    );
-
-    // Pane 5 (all empty)
-    for stuff in &[
-        &x_s_self_items,
-        &y_s_self_items,
-        &y_s_trait_items,
-        &z_s_trait_items,
-    ] {
-        for (_label, item) in *stuff {
-            assert!(BROWSER.list_items(crate_id, &item).is_empty());
-        }
-    }
+    let z_s_trait = z_s_items.by_label("impl Trait");
+    let z_s_trait_items = BROWSER.list_items(&z_s_trait.0);
+    // doesn't include "fn method" because it didn't override it:
+    assert_eq!(z_s_trait_items.labels(), &["trait Trait"]);
 }

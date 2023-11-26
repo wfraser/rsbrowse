@@ -106,8 +106,8 @@ impl Analysis {
     where
         'a: 'b,
     {
-        let ItemId(parent_crate, parent_id) = parent_id;
         let parent = {
+            let ItemId(parent_crate, parent_id) = parent_id;
             let crate_ = &self
                 .crates
                 .get(parent_crate.name)
@@ -173,39 +173,42 @@ impl Analysis {
             AssocType { .. } => vec![],
         };
 
-        children.into_iter().filter_map(move |id| {
-            if let Some(item) = self.crates[parent_crate.name].index.get(id) {
-                Some((
-                    ItemId(
-                        CrateId {
-                            name: parent_crate.name,
-                        },
-                        id,
-                    ),
-                    Item::Item(item),
-                ))
-            } else {
-                let summary = self.crates[parent_crate.name].paths.get(id)?;
-                let other_crate = &summary.path[0];
-                let other_id =
-                    self.crates
-                        .get(other_crate)?
-                        .paths
-                        .iter()
-                        .find_map(|(id, other)| {
-                            if other.path == summary.path {
-                                Some(id)
-                            } else {
-                                None
-                            }
-                        })?;
-                let item = self.crates[other_crate].index.get(other_id)?;
-                Some((
-                    ItemId(CrateId { name: other_crate }, other_id),
-                    Item::Item(item),
-                ))
-            }
-        })
+        children
+            .into_iter()
+            .filter_map(move |id| self.get_item(parent_id.crate_sibling(id)))
+    }
+
+    pub fn get_item<'a>(&'a self, id: ItemId<'a>) -> Option<(ItemId<'a>, Item<'a>)> {
+        let ItemId(local_crate, local_id) = &id;
+        if let Some(item) = self.crates.get(local_crate.name)?.index.get(local_id) {
+            Some((id, Item::Item(item)))
+        } else {
+            // Wasn't found in the local crate's index; look up the summary in paths.
+            let summary = self.crates[local_crate.name].paths.get(local_id)?;
+            let other_crate = &summary.path[0];
+            // Try looking up by path in the other crate's analysis (if we have it).
+            let other_id = self
+                .crates
+                .get(other_crate)?
+                .paths
+                .iter()
+                .find_map(|(id, other)| {
+                    if other.path == summary.path {
+                        Some(id)
+                    } else {
+                        None
+                    }
+                })?;
+            let item = self.crates[other_crate].index.get(other_id)?;
+            Some((
+                ItemId(CrateId { name: other_crate }, other_id),
+                Item::Item(item),
+            ))
+        }
+    }
+
+    pub fn get_path<'a>(&'a self, id: ItemId<'a>) -> &'a [String] {
+        &self.crates[id.0.name].paths[id.1].path[..]
     }
 }
 
@@ -264,6 +267,10 @@ impl<'a> ItemId<'a> {
 
     pub fn crate_name(&self) -> &str {
         self.0.name
+    }
+
+    pub fn crate_sibling(&self, other_id: &'a rustdoc_types::Id) -> Self {
+        Self(CrateId { name: self.0.name }, other_id)
     }
 }
 

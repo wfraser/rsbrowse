@@ -10,6 +10,61 @@ impl RustdocBrowser {
     pub fn new(analysis: Analysis) -> Self {
         Self { analysis }
     }
+
+    fn item_label(&self, id: ItemId, item: &rustdoc_types::Item) -> String {
+        use rustdoc_types::ItemEnum::*;
+        let name = item.name.as_deref().unwrap_or("<unnamed>");
+        let prefix = match &item.inner {
+            Module(_) => "mod",
+            ExternCrate { name, .. } => return format!("extern crate {name}"),
+            Import(i) => return format!("use {}", i.source), // TODO: globs
+            Union(_) => "union",
+            Struct(_) => "struct",
+            StructField(f) => return format!("{}: {}", name, type_label(f)),
+            Enum(_) => "enum",
+            Variant(_) => "enum variant",
+            Function(_) => "fn", // TODO: include signature?
+            Trait(_) => "trait",
+            TraitAlias(_) => "trait alias",
+            Impl(i) => {
+                return if let Some(trait_) = &i.trait_ {
+                    let full_path = self.analysis.get_path(id.crate_sibling(&trait_.id));
+                    if full_path[0] == id.crate_name() {
+                        // trait in local crate, use trait name
+                        format!("impl {}", trait_.name)
+                    } else {
+                        // trait in foreign crate, use full path
+                        format!("impl {}", full_path.join("::"))
+                    }
+                } else {
+                    "impl Self".to_string()
+                };
+            }
+            TypeAlias(_) => "type",
+            OpaqueTy(_) => "opaque type",
+            Constant(c) => return format!("const {}: {}", name, c.expr),
+            Static(s) => return format!("static {}: {}", name, s.expr),
+            ForeignType => "extern type",
+            Macro(_) => "macro",
+            ProcMacro(_) => "proc macro",
+            Primitive(_) => "",
+            AssocConst { type_, default } => {
+                return if let Some(default) = default {
+                    format!("const {name}: {} = {default}", type_label(type_))
+                } else {
+                    format!("const {name}: {}", type_label(type_))
+                }
+            }
+            AssocType { default, .. } => {
+                return if let Some(default) = default {
+                    format!("type {name} = {}", type_label(default))
+                } else {
+                    format!("type {name}")
+                };
+            }
+        };
+        format!("{prefix} {name}")
+    }
 }
 
 impl<'a> Browser for &'a RustdocBrowser {
@@ -46,7 +101,7 @@ impl<'a> Browser for &'a RustdocBrowser {
                 }
                 match &inner.inner {
                     Impl(i) if i.blanket_impl.is_some() || i.synthetic => None,
-                    _ => Some((item_label(inner), (id, item))),
+                    _ => Some((self.item_label(id.clone(), inner), (id, item))),
                 }
             })
             .collect::<Vec<_>>();
@@ -132,55 +187,6 @@ fn crate_label(id: &ItemId) -> String {
         CrateType::Dylib => format!("{} (dylib)", c.name),
     }*/
     id.crate_name().to_owned()
-}
-
-fn item_label(item: &rustdoc_types::Item) -> String {
-    use rustdoc_types::ItemEnum::*;
-    let name = item.name.as_deref().unwrap_or("<unnamed>");
-    let prefix = match &item.inner {
-        Module(_) => "mod",
-        ExternCrate { name, .. } => return format!("extern crate {name}"),
-        Import(i) => return format!("use {}", i.source), // TODO: globs
-        Union(_) => "union",
-        Struct(_) => "struct",
-        StructField(f) => return format!("{}: {}", name, type_label(f)),
-        Enum(_) => "enum",
-        Variant(_) => "enum variant",
-        Function(_) => "fn", // TODO: include signature?
-        Trait(_) => "trait",
-        TraitAlias(_) => "trait alias",
-        Impl(i) => {
-            let name = type_label(&i.for_);
-            return if let Some(trait_) = &i.trait_ {
-                format!("impl {} for {name}", trait_.name)
-            } else {
-                format!("impl {name}")
-            };
-        }
-        TypeAlias(_) => "type",
-        OpaqueTy(_) => "opaque type",
-        Constant(c) => return format!("const {}: {}", name, c.expr),
-        Static(s) => return format!("static {}: {}", name, s.expr),
-        ForeignType => "extern type",
-        Macro(_) => "macro",
-        ProcMacro(_) => "proc macro",
-        Primitive(_) => "",
-        AssocConst { type_, default } => {
-            return if let Some(default) = default {
-                format!("const {name}: {} = {default}", type_label(type_))
-            } else {
-                format!("const {name}: {}", type_label(type_))
-            }
-        }
-        AssocType { default, .. } => {
-            return if let Some(default) = default {
-                format!("type {name} = {}", type_label(default))
-            } else {
-                format!("type {name}")
-            };
-        }
-    };
-    format!("{prefix} {name}")
 }
 
 fn type_label(ty: &rustdoc_types::Type) -> String {
