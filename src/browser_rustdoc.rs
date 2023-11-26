@@ -1,5 +1,5 @@
-use crate::analysis::{Analysis, CrateId, Item};
-use crate::browser_trait::{self, Browser};
+use crate::analysis::{Analysis, Item, ItemId};
+use crate::browser_trait::Browser;
 use std::fmt::Write;
 
 pub struct RustdocBrowser {
@@ -13,15 +13,15 @@ impl RustdocBrowser {
 }
 
 impl<'a> Browser for &'a RustdocBrowser {
-    type CrateId = CrateId;
     type Item = Item<'a>;
+    type ItemId = ItemId<'a>;
 
-    fn list_crates(&self) -> Vec<(String, CrateId)> {
+    fn list_crates(&self) -> Vec<(String, ItemId<'a>)> {
         let mut crates = self
             .analysis
             .crate_ids()
             //.filter(|c| !self.analysis.stdlib_crates.contains(c))
-            .map(|c| (crate_label(&c), c))
+            .map(|item_id| (crate_label(&item_id), item_id))
             .collect::<Vec<_>>();
 
         sort_by_label(&mut crates);
@@ -29,25 +29,14 @@ impl<'a> Browser for &'a RustdocBrowser {
         crates
     }
 
-    fn list_items(&self, crate_id: &CrateId, parent: &Item<'a>) -> Vec<(String, Item<'a>)> {
-        let parent_id = match parent {
-            Item::Item(item) | Item::Foreign(_, item) => Some(item.id.clone()),
-            Item::Root => None,
-        };
-
-        let crate_id = match parent {
-            Item::Foreign(other_crate, _) => other_crate,
-            Item::Item(_) | Item::Root => crate_id,
-        };
-
+    fn list_items(&self, parent_id: &ItemId<'a>) -> Vec<(String, (ItemId<'a>, Item<'a>))> {
         let mut items = self
             .analysis
-            .items(crate_id, parent_id)
-            .filter_map(|item| {
+            .items(parent_id)
+            .filter_map(|(id, item)| {
                 let inner = match item {
                     Item::Root => return None,
                     Item::Item(item) => item,
-                    Item::Foreign(_, item) => item,
                 };
 
                 // Remove the clutter of automatically derived, blanket, and synthetic trait impls.
@@ -57,7 +46,7 @@ impl<'a> Browser for &'a RustdocBrowser {
                 }
                 match &inner.inner {
                     Impl(i) if i.blanket_impl.is_some() || i.synthetic => None,
-                    _ => Some((item_label(inner), item)),
+                    _ => Some((item_label(inner), (id, item))),
                 }
             })
             .collect::<Vec<_>>();
@@ -66,10 +55,10 @@ impl<'a> Browser for &'a RustdocBrowser {
         items
     }
 
-    fn get_info(&self, crate_id: &CrateId, item: &Item<'a>) -> String {
+    fn get_info(&self, item: &Item<'a>) -> String {
         let mut txt = String::new();
         match item {
-            Item::Item(item) | Item::Foreign(_, item) => {
+            Item::Item(item) => {
                 if let Some(docs) = &item.docs {
                     txt += &docs;
                     txt.push('\n');
@@ -84,19 +73,19 @@ impl<'a> Browser for &'a RustdocBrowser {
                 }
             }
             Item::Root => {
-                write!(txt, "crate root of {crate_id:?}").unwrap();
+                write!(txt, "crate root").unwrap();
             }
         }
         txt
     }
 
-    fn get_debug_info(&self, crate_id: &CrateId, item: &Item) -> String {
-        format!("{crate_id:?}: {item:#?}")
+    fn get_debug_info(&self, item: &Item) -> String {
+        format!("{item:#?}")
     }
 
     fn get_source(&self, item: &Item) -> (String, Option<usize>) {
         match item {
-            Item::Item(item) | Item::Foreign(_, item) => {
+            Item::Item(item) => {
                 let (txt, line) = get_source_for_item(item);
                 (txt, Some(line))
             }
@@ -134,7 +123,7 @@ fn sort_by_label<T>(slice: &mut [(String, T)]) {
     slice.sort_unstable_by(cmp_labels);
 }
 
-fn crate_label(c: &CrateId) -> String {
+fn crate_label(id: &ItemId) -> String {
     /*match c.crate_type {
         CrateType::Bin => format!("{} (bin)", c.name),
         CrateType::ProcMacro => format!("{} (proc-macro)", c.name),
@@ -142,7 +131,7 @@ fn crate_label(c: &CrateId) -> String {
         CrateType::CDylib => format!("{} (cdylib)", c.name),
         CrateType::Dylib => format!("{} (dylib)", c.name),
     }*/
-    c.name.clone()
+    id.crate_name().to_owned()
 }
 
 fn item_label(item: &rustdoc_types::Item) -> String {
@@ -277,21 +266,6 @@ fn type_label(ty: &rustdoc_types::Type) -> String {
             } else {
                 format!("{}::{name}", type_label(self_type))
             }
-        }
-    }
-}
-
-impl<'a> browser_trait::Item for Item<'a> {
-    type CrateId = CrateId;
-
-    fn crate_root() -> Self {
-        Item::Root
-    }
-
-    fn crate_id<'b>(&'b self, crate_id: &'b CrateId) -> &'b CrateId {
-        match self {
-            Item::Root | Item::Item(_) => crate_id,
-            Item::Foreign(other_crate, _) => other_crate,
         }
     }
 }

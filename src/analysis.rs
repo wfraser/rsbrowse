@@ -7,10 +7,10 @@ use std::process::Command;
 use anyhow::Context;
 use rayon::prelude::*;
 
-pub type Id = rustdoc_types::Id;
-
 /// Write the analysis data to a subdirectory under target/ with this name.
 const SUBDIR: &str = "rsbrowse";
+
+const EMPTY_ID: &rustdoc_types::Id = &rustdoc_types::Id(String::new());
 
 pub struct Analysis {
     pub crates: HashMap<String, rustdoc_types::Crate>,
@@ -86,93 +86,80 @@ impl Analysis {
         Ok(Self { crates })
     }
 
-    pub fn crate_ids(&self) -> impl Iterator<Item = CrateId> + '_ {
-        /*let mut ids = vec![];
-
-        for c in self.crates.values() {
-            let name = c.index.iter()
-                .find_map(|(_id, item)| {
-                    match &item.inner {
-                        rustdoc_types::ItemEnum::Module(m) if m.is_crate && item.crate_id == 0 => {
-                            Some(item.name.clone().expect("crate module should have a name"))
-                        }
-                        _ => None
-                    }
-                })
-                .expect("should have an index item for the local crate");
-
-            ids.push(CrateId { name });
-        }*/
-
+    pub fn crate_ids(&self) -> impl Iterator<Item = ItemId> + '_ {
         self.crates
             .values()
             .flat_map(|crate_| &crate_.index)
             .filter_map(|(_id, item)| match &item.inner {
                 rustdoc_types::ItemEnum::Module(m) if m.is_crate && item.crate_id == 0 => {
-                    let name = item.name.clone().expect("crate module should have a name");
-                    Some(CrateId { name })
+                    let name = item.name.as_ref().expect("crate module should have a name");
+                    Some(ItemId::crate_root(CrateId { name }))
                 }
                 _ => None,
             })
-
-        //ids.into_iter()
     }
 
     pub fn items<'a, 'b>(
         &'a self,
-        crate_id: &'b CrateId,
-        parent_id: Option<Id>,
-    ) -> impl Iterator<Item = Item<'a>> + 'b
+        parent_id: &'b ItemId<'a>,
+    ) -> impl Iterator<Item = (ItemId<'a>, Item<'a>)> + 'b
     where
         'a: 'b,
     {
-        let parent_id = parent_id.unwrap_or(self.crates[&crate_id.name].root.clone());
-        let parent = self
-            .crates
-            .get(&crate_id.name)
-            .unwrap_or_else(|| panic!("no crate {crate_id:?}"))
-            .index
-            .get(&parent_id)
-            .unwrap_or_else(|| panic!("no id {parent_id:?} in {crate_id:?}"));
+        let ItemId(parent_crate, parent_id) = parent_id;
+        let parent = {
+            let crate_ = &self
+                .crates
+                .get(parent_crate.name)
+                .unwrap_or_else(|| panic!("no crate {parent_crate:?}"));
+            let id = if parent_id == &EMPTY_ID {
+                &crate_.root
+            } else {
+                parent_id
+            };
+            crate_
+                .index
+                .get(id)
+                .unwrap_or_else(|| panic!("no id {id:?} in {parent_crate:?}"))
+        };
 
         use rustdoc_types::ItemEnum::*;
-        let children = match &parent.inner {
-            Module(m) => m.items.clone(),
+        let children: Vec<&'a rustdoc_types::Id> = match &parent.inner {
+            Module(m) => m.items.iter().collect(),
             ExternCrate { .. } => vec![],
             Import(_) => vec![],
-            Union(u) => [&u.fields[..], &u.impls[..]].concat(),
+            Union(u) => u.fields.iter().chain(&u.impls).collect(),
             Struct(s) => {
                 let fields = match &s.kind {
                     rustdoc_types::StructKind::Unit => vec![],
                     rustdoc_types::StructKind::Tuple(t) => {
-                        t.iter().filter_map(|x| x.as_ref()).cloned().collect()
+                        t.iter().filter_map(|x| x.as_ref()).collect()
                     }
-                    rustdoc_types::StructKind::Plain { fields, .. } => fields.clone(),
+                    rustdoc_types::StructKind::Plain { fields, .. } => fields.iter().collect(),
                 };
-                [&fields[..], &s.impls[..]].concat()
+                fields.into_iter().chain(&s.impls).collect()
             }
             StructField(ty) => type_ids(ty),
-            Enum(e) => [&e.variants[..], &e.impls[..]].concat(),
+            Enum(e) => e.variants.iter().chain(&e.impls).collect(),
             Variant(v) => match &v.kind {
                 rustdoc_types::VariantKind::Plain => vec![],
                 rustdoc_types::VariantKind::Tuple(t) => {
-                    t.iter().filter_map(|id| id.clone()).collect()
+                    t.iter().filter_map(|id| id.as_ref()).collect()
                 }
-                rustdoc_types::VariantKind::Struct { fields, .. } => fields.clone(),
+                rustdoc_types::VariantKind::Struct { fields, .. } => fields.iter().collect(),
             },
             Function(_) => vec![],
             Trait(t) => {
                 // TODO: also find impls?
-                t.items.clone()
+                t.items.iter().collect()
             }
             TraitAlias(_) => vec![],
             Impl(i) => {
-                let mut items = i.items.clone();
-                // Add a reference to the trait itself too if it's not an inherent impl:
-                if let Some(trait_) = &i.trait_ {
-                    items.push(trait_.id.clone());
-                }
-                items
+                i.items
+                    .iter()
+                    // Add a reference to the trait itself too if it's not an inherent impl:
+                    .chain(i.trait_.as_ref().map(|t| &t.id))
+                    .collect()
             }
             TypeAlias(ty) => type_ids(&ty.type_),
             OpaqueTy(_) => vec![],
@@ -187,10 +174,18 @@ impl Analysis {
         };
 
         children.into_iter().filter_map(move |id| {
-            if let Some(item) = self.crates[&crate_id.name].index.get(&id) {
-                Some(Item::Item(item))
+            if let Some(item) = self.crates[parent_crate.name].index.get(id) {
+                Some((
+                    ItemId(
+                        CrateId {
+                            name: parent_crate.name,
+                        },
+                        id,
+                    ),
+                    Item::Item(item),
+                ))
             } else {
-                let summary = self.crates[&crate_id.name].paths.get(&id)?;
+                let summary = self.crates[parent_crate.name].paths.get(id)?;
                 let other_crate = &summary.path[0];
                 let other_id =
                     self.crates
@@ -205,11 +200,9 @@ impl Analysis {
                             }
                         })?;
                 let item = self.crates[other_crate].index.get(other_id)?;
-                Some(Item::Foreign(
-                    CrateId {
-                        name: other_crate.to_owned(),
-                    },
-                    item,
+                Some((
+                    ItemId(CrateId { name: other_crate }, other_id),
+                    Item::Item(item),
                 ))
             }
         })
@@ -222,11 +215,11 @@ fn parse_json(p: &Path) -> anyhow::Result<rustdoc_types::Crate> {
     Ok(data)
 }
 
-fn type_ids(ty: &rustdoc_types::Type) -> Vec<Id> {
+fn type_ids(ty: &rustdoc_types::Type) -> Vec<&rustdoc_types::Id> {
     use rustdoc_types::Type::*;
     match ty {
-        ResolvedPath(path) => vec![path.id.clone()],
-        DynTrait(dt) => dt.traits.iter().map(|t| t.trait_.id.clone()).collect(),
+        ResolvedPath(path) => vec![&path.id],
+        DynTrait(dt) => dt.traits.iter().map(|t| &t.trait_.id).collect(),
         Generic(_) => vec![],
         Primitive(_) => vec![],
         FunctionPointer(_) => vec![],
@@ -236,7 +229,7 @@ fn type_ids(ty: &rustdoc_types::Type) -> Vec<Id> {
         ImplTrait(generics) => generics
             .iter()
             .filter_map(|g| match g {
-                rustdoc_types::GenericBound::TraitBound { trait_, .. } => Some(trait_.id.clone()),
+                rustdoc_types::GenericBound::TraitBound { trait_, .. } => Some(&trait_.id),
                 rustdoc_types::GenericBound::Outlives(_) => None,
             })
             .collect(),
@@ -248,7 +241,7 @@ fn type_ids(ty: &rustdoc_types::Type) -> Vec<Id> {
         } => {
             let from_self = type_ids(self_type);
             if let Some(t) = trait_ {
-                [&from_self[..], &[t.id.clone()]].concat()
+                [&from_self[..], &[&t.id]].concat()
             } else {
                 from_self
             }
@@ -257,9 +250,21 @@ fn type_ids(ty: &rustdoc_types::Type) -> Vec<Id> {
 }
 
 #[derive(Debug, Clone)]
-pub struct CrateId {
-    pub name: String,
-    //pub id: u32,
+pub struct CrateId<'a> {
+    pub name: &'a String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ItemId<'a>(CrateId<'a>, &'a rustdoc_types::Id);
+
+impl<'a> ItemId<'a> {
+    pub fn crate_root(crate_id: CrateId<'a>) -> Self {
+        Self(crate_id, EMPTY_ID)
+    }
+
+    pub fn crate_name(&self) -> &str {
+        self.0.name
+    }
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -267,7 +272,6 @@ pub struct CrateId {
 pub enum Item<'a> {
     Root,
     Item(&'a rustdoc_types::Item),
-    Foreign(CrateId, &'a rustdoc_types::Item),
 }
 
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
