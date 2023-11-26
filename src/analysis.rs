@@ -17,9 +17,16 @@ pub struct Analysis {
 }
 
 impl Analysis {
-    pub fn generate(workspace_path: impl AsRef<Path>, compiler: &str) -> anyhow::Result<()> {
-        let cargo_status = Command::new("cargo")
-            .arg(format!("+{compiler}"))
+    pub fn generate(
+        workspace_path: impl AsRef<Path>,
+        toolchain: Option<&str>,
+    ) -> anyhow::Result<()> {
+        let mut cmd = Command::new("cargo");
+        if let Some(toolchain) = toolchain {
+            cmd.arg(format!("+{toolchain}"));
+        }
+
+        let cargo_status = cmd
             .arg("doc")
             .arg("--target-dir")
             .arg(Path::new("target").join(SUBDIR))
@@ -223,7 +230,7 @@ fn type_ids(ty: &rustdoc_types::Type) -> Vec<Id> {
         Generic(_) => vec![],
         Primitive(_) => vec![],
         FunctionPointer(_) => vec![],
-        Tuple(types) => types.iter().map(type_ids).flatten().collect(),
+        Tuple(types) => types.iter().flat_map(type_ids).collect(),
         Slice(ty) => type_ids(ty),
         Array { type_, .. } => type_ids(type_),
         ImplTrait(generics) => generics
@@ -239,7 +246,7 @@ fn type_ids(ty: &rustdoc_types::Type) -> Vec<Id> {
         QualifiedPath {
             self_type, trait_, ..
         } => {
-            let from_self = type_ids(&self_type);
+            let from_self = type_ids(self_type);
             if let Some(t) = trait_ {
                 [&from_self[..], &[t.id.clone()]].concat()
             } else {
