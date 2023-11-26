@@ -125,12 +125,12 @@ fn list_items() {
         x_s_items.labels(),
         &[
             "fn_field: Box<dyn Fn(usize, String) -> Option<i32>>",
-            "impl Self",
-            "impl core::fmt::Display",
-            "impl externcrate::ExternTrait",
             "int_field: i32",
             "opt_field: Option<Result<i32, std::io::Error>>",
             "string_field: String",
+            "impl Self",
+            "impl core::fmt::Display",
+            "impl externcrate::ExternTrait",
         ]
     );
 

@@ -170,12 +170,29 @@ fn get_source_for_item(item: &rustdoc_types::Item) -> (String, usize) {
     }
 }
 
-fn cmp_labels<T>(a: &(String, T), b: &(String, T)) -> std::cmp::Ordering {
-    a.0.cmp(&b.0)
+fn cmp_labels(a: &str, b: &str) -> std::cmp::Ordering {
+    // Fields (assuming they contain ": ") go first
+    a.contains(": ")
+        .cmp(&b.contains(": "))
+        .reverse() // less = goes first
+        .then_with(|| a.cmp(b))
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn cmp_test() {
+        use std::cmp::Ordering::*;
+        assert_eq!(cmp_labels("a: a", "b: b"), Less);
+        assert_eq!(cmp_labels("a", "z: z"), Greater);
+        assert_eq!(cmp_labels("a", "b"), Less);
+    }
 }
 
 fn sort_by_label<T>(slice: &mut [(String, T)]) {
-    slice.sort_unstable_by(cmp_labels);
+    slice.sort_unstable_by(|(a, _), (b, _)| cmp_labels(a, b));
 }
 
 fn crate_label(id: &ItemId) -> String {
