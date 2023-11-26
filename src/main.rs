@@ -78,5 +78,8 @@ fn main() {
         .collect::<Vec<_>>();
     println!("{:#?}", stuff);*/
 
+    // Mega-hax, but doesn't matter because we're not returning from run() anyway.
+    let browser: &'static RustdocBrowser = Box::leak(Box::new(browser));
+
     ui::run(browser);
 }

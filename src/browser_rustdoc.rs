@@ -1,4 +1,4 @@
-use crate::analysis::{Analysis, CrateId};
+use crate::analysis::{Analysis, CrateId, Item};
 use crate::browser_trait::{self, Browser};
 use std::fmt::Write;
 
@@ -12,9 +12,9 @@ impl RustdocBrowser {
     }
 }
 
-impl Browser for RustdocBrowser {
+impl<'a> Browser for &'a RustdocBrowser {
     type CrateId = CrateId;
-    type Item = Item;
+    type Item = Item<'a>;
 
     fn list_crates(&self) -> Vec<(String, CrateId)> {
         let mut crates = self
@@ -29,37 +29,47 @@ impl Browser for RustdocBrowser {
         crates
     }
 
-    fn list_items(&self, crate_id: &CrateId, parent: &Item) -> Vec<(String, Item)> {
+    fn list_items(&self, crate_id: &CrateId, parent: &Item<'a>) -> Vec<(String, Item<'a>)> {
         let parent_id = match parent {
-            Item::Item(item) => Some(item.id.clone()),
-            _ => None,
+            Item::Item(item) | Item::Foreign(_, item) => Some(item.id.clone()),
+            Item::Root => None,
+        };
+
+        let crate_id = match parent {
+            Item::Foreign(other_crate, _) => other_crate,
+            Item::Item(_) | Item::Root => crate_id,
         };
 
         let mut items = self
             .analysis
             .items(crate_id, parent_id)
-            .filter(|item| {
+            .filter_map(|item| {
+                let inner = match item {
+                    Item::Root => return None,
+                    Item::Item(item) => item,
+                    Item::Foreign(_, item) => item,
+                };
+
                 // Remove the clutter of automatically derived, blanket, and synthetic trait impls.
                 use rustdoc_types::ItemEnum::*;
-                if item.attrs.iter().any(|a| a == "#[automatically_derived]") {
-                    return false;
+                if inner.attrs.iter().any(|a| a == "#[automatically_derived]") {
+                    return None;
                 }
-                match &item.inner {
-                    Impl(i) => i.blanket_impl.is_none() && !i.synthetic,
-                    _ => true,
+                match &inner.inner {
+                    Impl(i) if i.blanket_impl.is_some() || i.synthetic => None,
+                    _ => Some((item_label(inner), item)),
                 }
             })
-            .map(|item| (item_label(item), Item::Item(item.clone())))
             .collect::<Vec<_>>();
         sort_by_label(&mut items);
 
         items
     }
 
-    fn get_info(&self, crate_id: &CrateId, item: &Item) -> String {
+    fn get_info(&self, crate_id: &CrateId, item: &Item<'a>) -> String {
         let mut txt = String::new();
         match item {
-            Item::Item(item) => {
+            Item::Item(item) | Item::Foreign(_, item) => {
                 if let Some(docs) = &item.docs {
                     txt += &docs;
                     txt.push('\n');
@@ -86,7 +96,7 @@ impl Browser for RustdocBrowser {
 
     fn get_source(&self, item: &Item) -> (String, Option<usize>) {
         match item {
-            Item::Item(item) => {
+            Item::Item(item) | Item::Foreign(_, item) => {
                 let (txt, line) = get_source_for_item(item);
                 (txt, Some(line))
             }
@@ -271,15 +281,17 @@ fn type_label(ty: &rustdoc_types::Type) -> String {
     }
 }
 
-#[allow(clippy::large_enum_variant)]
-#[derive(Debug, Clone)]
-pub enum Item {
-    Root,
-    Item(rustdoc_types::Item),
-}
+impl<'a> browser_trait::Item for Item<'a> {
+    type CrateId = CrateId;
 
-impl browser_trait::Item for Item {
     fn crate_root() -> Self {
         Item::Root
+    }
+
+    fn crate_id<'b>(&'b self, crate_id: &'b CrateId) -> &'b CrateId {
+        match self {
+            Item::Root | Item::Item(_) => crate_id,
+            Item::Foreign(other_crate, _) => other_crate,
+        }
     }
 }

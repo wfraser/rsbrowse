@@ -9,8 +9,8 @@ use std::borrow::Cow;
 /// How many lines to scroll to before a definition.
 const SOURCE_LEADING_CONTEXT_LINES: usize = 5;
 
-struct UserData<B: Browser> {
-    browser: B,
+struct UserData<T> {
+    browser: T,
 }
 
 /// Makes a selectview showing the children of the given parent item in the given crate.
@@ -32,10 +32,14 @@ fn make_selectview<B: Browser + 'static>(
     }
 
     let crate_id2 = crate_id.clone();
-    select.set_on_submit(move |ui, item| info_dialog::<B>(ui, &crate_id2, item));
+    select.set_on_submit(move |ui, item| {
+        let crate_id = item.crate_id(&crate_id2);
+        info_dialog::<B>(ui, crate_id, item)
+    });
 
     select.set_on_select(move |ui, item| {
-        add_panel::<B>(ui, crate_id.clone(), item, depth + 1);
+        let crate_id = item.crate_id(&crate_id);
+        add_panel::<B>(ui, crate_id.to_owned(), item, depth + 1);
     });
 
     Some(select)
@@ -108,10 +112,13 @@ fn add_panel<B: Browser + 'static>(
     let mut next = vec![];
     let mut local_depth = depth;
     let mut local_parent = Cow::Borrowed(parent);
-    while let Some(view) = make_selectview(data, crate_id.clone(), &local_parent, local_depth) {
+    let mut local_crate_id = crate_id.clone();
+    while let Some(view) = make_selectview(data, local_crate_id.clone(), &local_parent, local_depth)
+    {
         if let Some((_label, item)) = view.get_item(0) {
             local_depth += 1;
             local_parent = Cow::Owned(item.clone());
+            local_crate_id = item.crate_id(&local_crate_id).to_owned();
         }
         next.push(view);
     }

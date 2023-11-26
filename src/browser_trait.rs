@@ -1,6 +1,6 @@
 pub trait Browser {
     type CrateId: Clone;
-    type Item: Item + Clone;
+    type Item: Item<CrateId = Self::CrateId> + Clone;
     fn list_crates(&self) -> Vec<(String, Self::CrateId)>;
     fn list_items(
         &self,
@@ -13,5 +13,7 @@ pub trait Browser {
 }
 
 pub trait Item {
+    type CrateId;
     fn crate_root() -> Self;
+    fn crate_id<'a>(&'a self, crate_id: &'a Self::CrateId) -> &'a Self::CrateId;
 }

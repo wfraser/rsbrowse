@@ -111,13 +111,22 @@ impl Analysis {
         //ids.into_iter()
     }
 
-    pub fn items<'a>(
+    pub fn items<'a, 'b>(
         &'a self,
-        crate_id: &'a CrateId,
+        crate_id: &'b CrateId,
         parent_id: Option<Id>,
-    ) -> impl Iterator<Item = &'a rustdoc_types::Item> + 'a {
+    ) -> impl Iterator<Item = Item<'a>> + 'b
+    where
+        'a: 'b,
+    {
         let parent_id = parent_id.unwrap_or(self.crates[&crate_id.name].root.clone());
-        let parent = &self.crates[&crate_id.name].index[&parent_id];
+        let parent = self
+            .crates
+            .get(&crate_id.name)
+            .unwrap_or_else(|| panic!("no crate {crate_id:?}"))
+            .index
+            .get(&parent_id)
+            .unwrap_or_else(|| panic!("no id {parent_id:?} in {crate_id:?}"));
 
         use rustdoc_types::ItemEnum::*;
         let children = match &parent.inner {
@@ -172,7 +181,7 @@ impl Analysis {
 
         children.into_iter().filter_map(move |id| {
             if let Some(item) = self.crates[&crate_id.name].index.get(&id) {
-                Some(item)
+                Some(Item::Item(item))
             } else {
                 let summary = self.crates[&crate_id.name].paths.get(&id)?;
                 let other_crate = &summary.path[0];
@@ -189,10 +198,12 @@ impl Analysis {
                             }
                         })?;
                 let item = self.crates[other_crate].index.get(other_id)?;
-                // FIXME: we need some way to tell callers that this item is in another crate
-                //Some(item)
-                eprintln!("child is in another crate ({other_crate}): {item:#?}");
-                None
+                Some(Item::Foreign(
+                    CrateId {
+                        name: other_crate.to_owned(),
+                    },
+                    item,
+                ))
             }
         })
     }
@@ -242,6 +253,14 @@ fn type_ids(ty: &rustdoc_types::Type) -> Vec<Id> {
 pub struct CrateId {
     pub name: String,
     //pub id: u32,
+}
+
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug, Clone)]
+pub enum Item<'a> {
+    Root,
+    Item(&'a rustdoc_types::Item),
+    Foreign(CrateId, &'a rustdoc_types::Item),
 }
 
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
