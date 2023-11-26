@@ -22,7 +22,7 @@ impl RustdocBrowser {
             Struct(_) => "struct",
             StructField(f) => return format!("{}: {}", name, type_label(f)),
             Enum(_) => "enum",
-            Variant(_) => "enum variant",
+            Variant(_) => "variant",
             Function(_) => "fn", // TODO: include signature?
             Trait(_) => "trait",
             TraitAlias(_) => "trait alias",

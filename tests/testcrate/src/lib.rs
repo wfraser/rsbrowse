@@ -21,6 +21,12 @@ pub mod x {
             "this is my implementation"
         }
     }
+
+    enum E {
+        UnitVariant,
+        TupleVariant(S),
+        StructVariant { a: S },
+    }
 }
 
 pub mod y {

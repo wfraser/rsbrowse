@@ -93,7 +93,7 @@ fn list_items() {
 
     let mod_x = root_items.by_label("mod x");
     let mod_x_items = BROWSER.list_items(&mod_x.0);
-    assert_eq!(mod_x_items.labels(), &["struct S"]);
+    assert_eq!(mod_x_items.labels(), &["enum E", "struct S"]);
 
     let mod_y = root_items.by_label("mod y");
     let mod_y_items = BROWSER.list_items(&mod_y.0);
@@ -119,6 +119,17 @@ fn list_items() {
 
     // Pane 3
 
+    let x_e = mod_x_items.by_label("enum E");
+    let x_e_items = BROWSER.list_items(&x_e.0);
+    assert_eq!(
+        x_e_items.labels(),
+        &[
+            "variant StructVariant",
+            "variant TupleVariant",
+            "variant UnitVariant",
+        ]
+    );
+
     let x_s = mod_x_items.by_label("struct S");
     let x_s_items = BROWSER.list_items(&x_s.0);
     assert_eq!(
@@ -143,6 +154,18 @@ fn list_items() {
     assert_eq!(z_s_items.labels(), &["impl Trait"]);
 
     // Pane 4
+
+    let x_e_unit = x_e_items.by_label("variant UnitVariant");
+    let x_e_unit_items = BROWSER.list_items(&x_e_unit.0);
+    assert_eq!(x_e_unit_items.labels(), &[] as &[&str]);
+
+    let x_e_tuple = x_e_items.by_label("variant TupleVariant");
+    let x_e_tuple_items = BROWSER.list_items(&x_e_tuple.0);
+    assert_eq!(x_e_tuple_items.labels(), &["0: S"] as &[&str]);
+
+    let x_e_struct = x_e_items.by_label("variant StructVariant");
+    let x_e_struct_items = BROWSER.list_items(&x_e_struct.0);
+    assert_eq!(x_e_struct_items.labels(), &["a: S"]);
 
     let x_s_self = x_s_items.by_label("impl Self");
     let x_s_self_items = BROWSER.list_items(&x_s_self.0);
