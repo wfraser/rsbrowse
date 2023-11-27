@@ -22,7 +22,14 @@ impl RustdocBrowser {
             Struct(_) => "struct",
             StructField(f) => return format!("{}: {}", name, type_label(f)),
             Enum(_) => "enum",
-            Variant(_) => "variant",
+            Variant(v) => {
+                if let Some(ty) = self.single_element_tuple_variant(v, id) {
+                    // Include the name of the wrapped type in the label.
+                    // list_items() will skip the redundant type later.
+                    return format!("variant {name}({})", type_label(ty));
+                }
+                "variant"
+            }
             Function(_) => "fn", // TODO: include signature?
             Trait(_) => "trait",
             TraitAlias(_) => "trait alias",
@@ -65,6 +72,25 @@ impl RustdocBrowser {
         };
         format!("{prefix} {name}")
     }
+
+    fn single_element_tuple_variant<'a>(
+        &'a self,
+        v: &'a rustdoc_types::Variant,
+        id: ItemId<'a>,
+    ) -> Option<&'a rustdoc_types::Type> {
+        if let rustdoc_types::VariantKind::Tuple(t) = &v.kind {
+            if let Some(Some(inner_id)) = t.first() {
+                if let Some((_id, Item::Item(item))) =
+                    self.analysis.get_item(id.crate_sibling(inner_id))
+                {
+                    if let rustdoc_types::ItemEnum::StructField(ty) = &item.inner {
+                        return Some(ty);
+                    }
+                }
+            }
+        }
+        None
+    }
 }
 
 impl<'a> Browser for &'a RustdocBrowser {
@@ -85,6 +111,29 @@ impl<'a> Browser for &'a RustdocBrowser {
     }
 
     fn list_items(&self, parent_id: &ItemId<'a>) -> Vec<(String, (ItemId<'a>, Item<'a>))> {
+        // If true, skip showing this element's children and show the children of the first child
+        // instead. Basically, skip one level of nesting. Use when the item is redundant.
+        let mut use_first_child = false;
+        if let Some((_, Item::Item(parent))) = self.analysis.get_item(parent_id.clone()) {
+            match &parent.inner {
+                rustdoc_types::ItemEnum::Variant(v)
+                    if self
+                        .single_element_tuple_variant(v, parent_id.clone())
+                        .is_some() =>
+                {
+                    // Single-element tuple variant. The only child is a StructField for field "0".
+                    // This adds nothing because the type name is already in the Variant's label.
+                    use_first_child = true;
+                }
+                rustdoc_types::ItemEnum::StructField(_) => {
+                    // StructField's only child is the type, which adds nothing, as the type name is
+                    // already in the StructField's label.
+                    use_first_child = true;
+                }
+                _ => (),
+            }
+        }
+
         let mut items = self
             .analysis
             .items(parent_id)
@@ -106,6 +155,15 @@ impl<'a> Browser for &'a RustdocBrowser {
             })
             .collect::<Vec<_>>();
         sort_by_label(&mut items);
+
+        if use_first_child && !items.is_empty() {
+            assert_eq!(
+                items.len(),
+                1,
+                "use_first_child on non-singleton children list: {items:#?}"
+            );
+            return self.list_items(&items[0].1 .0);
+        }
 
         items
     }

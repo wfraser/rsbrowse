@@ -125,7 +125,7 @@ fn list_items() {
         x_e_items.labels(),
         &[
             "variant StructVariant",
-            "variant TupleVariant",
+            "variant TupleVariant(S)",
             "variant UnitVariant",
         ]
     );
@@ -159,9 +159,10 @@ fn list_items() {
     let x_e_unit_items = BROWSER.list_items(&x_e_unit.0);
     assert_eq!(x_e_unit_items.labels(), &[] as &[&str]);
 
-    let x_e_tuple = x_e_items.by_label("variant TupleVariant");
+    let x_e_tuple = x_e_items.by_label("variant TupleVariant(S)");
     let x_e_tuple_items = BROWSER.list_items(&x_e_tuple.0);
-    assert_eq!(x_e_tuple_items.labels(), &["0: S"] as &[&str]);
+    // Skip the struct field and the struct, go straight to its items:
+    assert_eq!(x_e_tuple_items.labels(), x_s_items.labels());
 
     let x_e_struct = x_e_items.by_label("variant StructVariant");
     let x_e_struct_items = BROWSER.list_items(&x_e_struct.0);
