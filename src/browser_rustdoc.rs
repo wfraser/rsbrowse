@@ -301,13 +301,6 @@ fn sort_by_label<T>(slice: &mut [(String, T)]) {
 }
 
 fn crate_label(id: &ItemId) -> String {
-    /*match c.crate_type {
-        CrateType::Bin => format!("{} (bin)", c.name),
-        CrateType::ProcMacro => format!("{} (proc-macro)", c.name),
-        CrateType::Lib => c.name.clone(),
-        CrateType::CDylib => format!("{} (cdylib)", c.name),
-        CrateType::Dylib => format!("{} (dylib)", c.name),
-    }*/
     id.crate_name().to_owned()
 }
 

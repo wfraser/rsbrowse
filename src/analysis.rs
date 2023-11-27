@@ -317,28 +317,3 @@ pub enum Item<'a> {
     Root,
     Item(&'a rustdoc_types::Item),
 }
-
-#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
-pub enum CrateType {
-    Bin,
-    Lib,
-    ProcMacro,
-    CDylib,
-    Dylib,
-}
-
-impl std::str::FromStr for CrateType {
-    type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(match s {
-            "bin" => Self::Bin,
-            "lib" => Self::Lib,
-            "proc-macro" => Self::ProcMacro,
-            "cdylib" => Self::CDylib,
-            "dylib" => Self::Dylib,
-            _ => {
-                return Err(format!("unknown crate type {s:?}"));
-            }
-        })
-    }
-}
