@@ -1,4 +1,4 @@
-use crate::analysis::{Analysis, Item, ItemId};
+use crate::analysis::{self, Analysis, Item, ItemId};
 use crate::browser_trait::Browser;
 use std::fmt::Write;
 
@@ -30,7 +30,7 @@ impl RustdocBrowser {
                 }
                 "variant"
             }
-            Function(_) => "fn", // TODO: include signature?
+            Function(_) => "fn", // signature represented by child items
             Trait(_) => "trait",
             TraitAlias(_) => "trait alias",
             Impl(i) => {
@@ -118,6 +118,9 @@ impl<'a> Browser for &'a RustdocBrowser {
         // If true, skip showing this element's children and show the children of the first child
         // instead. Basically, skip one level of nesting. Use when the item is redundant.
         let mut use_first_child = false;
+
+        let mut synthetic_items: Vec<(String, (ItemId<'a>, Item<'a>))> = vec![];
+
         if let Some((_, Item::Item(parent))) = self.analysis.get_item(parent_id.clone()) {
             match &parent.inner {
                 rustdoc_types::ItemEnum::Variant(v)
@@ -133,6 +136,41 @@ impl<'a> Browser for &'a RustdocBrowser {
                     // StructField's only child is the type, which adds nothing, as the type name is
                     // already in the StructField's label.
                     use_first_child = true;
+                }
+                rustdoc_types::ItemEnum::Function(f) => {
+                    synthetic_items = f
+                        .decl
+                        .inputs
+                        .iter()
+                        // TODO: implement special cases for names of self:
+                        //  - self
+                        //  - &self
+                        //  - &mut self
+                        .map(|(name, ty)| (format!("{name}:"), ty))
+                        .chain(f.decl.output.as_ref().map(|ty| ("->".to_owned(), ty)))
+                        .map(|(name, ty)| {
+                            let mut ids = analysis::type_ids(ty)
+                                .into_iter()
+                                .map(|id| parent_id.crate_sibling(id))
+                                .collect::<Vec<_>>();
+                            if ids.is_empty() {
+                                // Inject a fake ID so that the label at least shows up.
+                                ids.push(analysis::EMPTY_ITEM_ID.clone());
+                            }
+                            (name, ty, ids)
+                        })
+                        .flat_map(|(name, ty, ids)| {
+                            let use_suffix = ids.len() > 1;
+                            ids.into_iter().enumerate().map(move |(i, id)| {
+                                let tylabel = type_label(ty);
+                                let mut label = format!("{name} {tylabel}");
+                                if use_suffix {
+                                    label += &format!(" (#{i}");
+                                }
+                                (label, (id, Item::Item(parent)))
+                            })
+                        })
+                        .collect::<Vec<_>>();
                 }
                 _ => (),
             }
@@ -167,6 +205,11 @@ impl<'a> Browser for &'a RustdocBrowser {
                 "use_first_child on non-singleton children list: {items:#?}"
             );
             return self.list_items(&items[0].1 .0);
+        }
+
+        if !synthetic_items.is_empty() {
+            synthetic_items.extend(items);
+            items = std::mem::take(&mut synthetic_items);
         }
 
         items

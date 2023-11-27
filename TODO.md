@@ -5,11 +5,9 @@
 * Related, it's not currenlty possible to show crate types; having a binary and lib crate with the same name won't work.
 
 # Enhancements
-* format the label of functions to include the signature?
-    * might make it hard to read though, because argument lists can be very long.
-    * could also put the args and return types as child items of the fn. Would need some special-casing to not sort them.
 * implement some form of live search, where you can start typing and rsbrowse selects the thing
     * initially, within the current pane would be a nice start
     * eventually, within the current crate is probably good enough
     * globally is probably a bad idea
     * let users hit F3 or something to continue to the next match
+* add child items for generic parameters. Things like Arc<`Foo`> should have `Foo`'s children visible.

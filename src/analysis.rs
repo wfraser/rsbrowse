@@ -11,6 +11,15 @@ use rayon::prelude::*;
 const SUBDIR: &str = "rsbrowse";
 
 const EMPTY_ID: &rustdoc_types::Id = &rustdoc_types::Id(String::new());
+static EMPTY_STRING: String = String::new();
+
+// An ItemId which silently won't resolve to anything.
+pub static EMPTY_ITEM_ID: ItemId<'static> = ItemId(
+    CrateId {
+        name: &EMPTY_STRING,
+    },
+    EMPTY_ID,
+);
 
 pub struct Analysis {
     pub crates: HashMap<String, rustdoc_types::Crate>,
@@ -106,7 +115,17 @@ impl Analysis {
     where
         'a: 'b,
     {
-        let parent = {
+        let parent = if parent_id == &EMPTY_ITEM_ID {
+            // pick some random item
+            self.crates
+                .values()
+                .next()
+                .unwrap()
+                .index
+                .values()
+                .next()
+                .unwrap()
+        } else {
             let ItemId(parent_crate, parent_id) = parent_id;
             let crate_ = &self
                 .crates
@@ -125,6 +144,7 @@ impl Analysis {
 
         use rustdoc_types::ItemEnum::*;
         let children: Vec<&'a rustdoc_types::Id> = match &parent.inner {
+            _ if parent_id == &EMPTY_ITEM_ID => vec![],
             Module(m) => m.items.iter().collect(),
             ExternCrate { .. } => vec![],
             Import(_) => vec![],
@@ -179,6 +199,9 @@ impl Analysis {
     }
 
     pub fn get_item<'a>(&'a self, id: ItemId<'a>) -> Option<(ItemId<'a>, Item<'a>)> {
+        if id == EMPTY_ITEM_ID {
+            return None;
+        }
         let ItemId(local_crate, local_id) = &id;
         if let Some(item) = self.crates.get(local_crate.name)?.index.get(local_id) {
             Some((id, Item::Item(item)))
@@ -208,6 +231,9 @@ impl Analysis {
     }
 
     pub fn get_path<'a>(&'a self, id: ItemId<'a>) -> &'a [String] {
+        if id == EMPTY_ITEM_ID {
+            return &[];
+        }
         &self.crates[id.0.name].paths[id.1].path[..]
     }
 }
@@ -218,7 +244,7 @@ fn parse_json(p: &Path) -> anyhow::Result<rustdoc_types::Crate> {
     Ok(data)
 }
 
-fn type_ids(ty: &rustdoc_types::Type) -> Vec<&rustdoc_types::Id> {
+pub fn type_ids(ty: &rustdoc_types::Type) -> Vec<&rustdoc_types::Id> {
     use rustdoc_types::Type::*;
     match ty {
         ResolvedPath(path) => vec![&path.id],
@@ -252,12 +278,12 @@ fn type_ids(ty: &rustdoc_types::Type) -> Vec<&rustdoc_types::Id> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CrateId<'a> {
     pub name: &'a String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ItemId<'a>(CrateId<'a>, &'a rustdoc_types::Id);
 
 impl<'a> ItemId<'a> {

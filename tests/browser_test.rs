@@ -192,4 +192,12 @@ fn list_items() {
     let z_s_trait_items = BROWSER.list_items(&z_s_trait.0);
     // doesn't include "fn method" because it didn't override it:
     assert_eq!(z_s_trait_items.labels(), &["trait Trait"]);
+
+    // Pane 5
+    let x_s_self_f = x_s_self_items.by_label("fn f");
+    let x_s_self_f_items = BROWSER.list_items(&x_s_self_f.0);
+    assert_eq!(
+        x_s_self_f_items.labels(),
+        &["self: &Self", "e_arg: E", "-> S",]
+    );
 }

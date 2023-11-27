@@ -7,7 +7,7 @@ pub mod x {
     }
 
     impl S {
-        pub fn f(&self) {}
+        pub fn f(&self, e_arg: E) -> S {}
     }
 
     impl std::fmt::Display for S {
