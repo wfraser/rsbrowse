@@ -1,5 +1,10 @@
 pub mod x {
-    pub struct S;
+    pub struct S {
+        pub int_field: i32,
+        string_field: String,
+        opt_field: Option<Result<i32, std::io::Error>>,
+        fn_field: Box<dyn Fn(usize, String) -> Option<i32>>,
+    }
 
     impl S {
         pub fn f(&self) {}
@@ -16,13 +21,19 @@ pub mod x {
             "this is my implementation"
         }
     }
+
+    enum E {
+        UnitVariant,
+        TupleVariant(S),
+        StructVariant { a: S },
+    }
 }
 
 pub mod y {
     pub struct S;
 
     impl S {
-        pub fn g(&self) {}
+        pub fn spoopadoop(&self) {}
     }
 
     impl crate::Trait<u64> for S {

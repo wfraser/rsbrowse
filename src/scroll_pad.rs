@@ -1,5 +1,5 @@
-use cursive::Vec2;
 use cursive::view::{View, ViewWrapper};
+use cursive::Vec2;
 
 /// Adds one unit of padding to the right side of any view that doesn't require scrolling.
 /// This is used to prevent views from having text immediately adjacent to each other (which is

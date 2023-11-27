@@ -1,265 +1,284 @@
-use rls_analysis::{AnalysisHost, AnalysisLoader, SearchDirectory};
-use std::collections::btree_map::*;
-use std::convert::TryFrom;
-use std::io::{stderr, Write};
+use std::collections::HashMap;
+use std::fs::{self, File};
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use anyhow::Context;
+use rayon::prelude::*;
 
 /// Write the analysis data to a subdirectory under target/ with this name.
 const SUBDIR: &str = "rsbrowse";
 
+const EMPTY_ID: &rustdoc_types::Id = &rustdoc_types::Id(String::new());
+
 pub struct Analysis {
-    pub crates: Vec<Crate>,
-    pub stdlib_crates: Vec<CrateId>,
+    pub crates: HashMap<String, rustdoc_types::Crate>,
 }
 
 impl Analysis {
-    pub fn generate(workspace_path: impl AsRef<Path>, compiler: &str) -> Result<(), String> {
-        let config_json = serde_json::to_string(
-            &rls_data::config::Config {
-                output_file: None, // use default paths
-                full_docs: true,
-                pub_only: false,        // this should be controlled by cmdline args or something
-                reachable_only: false,  // this should be controlled by cmdline args or something
-                distro_crate: false,
-                signatures: false, // this causes rustc to ICE...
-                borrow_data: false,
-            })
-            .expect("failed to json-serialize rust analysis configuration");
+    pub fn generate(
+        workspace_path: impl AsRef<Path>,
+        toolchain: Option<&str>,
+    ) -> anyhow::Result<()> {
+        let mut cmd = Command::new("cargo");
+        if let Some(toolchain) = toolchain {
+            cmd.arg(format!("+{toolchain}"));
+        }
 
-        let cargo_status = Command::new("cargo")
-            .arg(format!("+{compiler}"))
-            .arg("check")
+        let cargo_status = cmd
+            .arg("doc")
             .arg("--target-dir")
             .arg(Path::new("target").join(SUBDIR))
-            .env("RUSTFLAGS", "-Z save-analysis")
-            .env("RUST_SAVE_ANALYSIS_CONFIG", &config_json)
+            .arg("--workspace")
+            .env(
+                "RUSTDOCFLAGS",
+                "-Zunstable-options \
+                --output-format=json \
+                --document-private-items \
+                --document-hidden-items \
+                ",
+            )
             .current_dir(workspace_path)
             .status()
-            .map_err(|e|
-                format!("failed to run 'cargo build': {e}")
-            )?;
+            .context("failed to run 'cargo rustdoc'")?;
 
-        if cargo_status.success() {
-            Ok(())
-        } else if let Some(code) = cargo_status.code() {
-            Err(format!("'cargo build' failed with exit code {code}"))
-        } else {
-            Err("'cargo build' killed by signal".to_owned())
+        if !cargo_status.success() {
+            if let Some(code) = cargo_status.code() {
+                anyhow::bail!("'cargo build' failed with exit code {code}");
+            } else {
+                anyhow::bail!("'cargo build' killed by signal");
+            }
         }
+        Ok(())
     }
 
-    pub fn load(workspace_path: impl Into<PathBuf>) -> Self {
-        let loader = Loader::new(workspace_path, "debug");
-        let crates = rls_analysis::read_analysis_from_files(
-                &loader, Default::default(), &[] as &[&str])
-            .into_iter()
-            .map(|c| Crate::try_from(c).expect("unable to read crate analysis"))
-            .collect::<Vec<Crate>>();
-        let mut stdlib_crates = vec![];
-        if let Some(ref stdlib_base) = loader.stdlib_dir {
-            for krate in &crates {
-                if krate.inner.path.as_ref().unwrap().starts_with(stdlib_base) {
-                    stdlib_crates.push(krate.id());
+    pub fn load(workspace_path: impl Into<PathBuf>) -> anyhow::Result<Self> {
+        let root: PathBuf = workspace_path
+            .into()
+            .join("target")
+            .join(SUBDIR)
+            .join("doc");
+        let mut paths = vec![];
+        for res in fs::read_dir(root)? {
+            let entry = res?;
+            if entry.file_name().as_encoded_bytes().ends_with(b".json") {
+                let path = entry.path();
+                let crate_name = path
+                    .file_stem()
+                    .unwrap()
+                    .to_str()
+                    .ok_or_else(|| anyhow::anyhow!("{path:?} isn't utf-8"))?
+                    .to_owned();
+                paths.push((crate_name, path));
+            }
+        }
+
+        let crates = paths
+            .into_par_iter()
+            .map(|(crate_name, path)| {
+                println!("reading {path:?}");
+                let data = parse_json(&path).with_context(|| path.display().to_string())?;
+                Ok((crate_name, data))
+            })
+            .collect::<anyhow::Result<HashMap<_, _>>>()?;
+
+        Ok(Self { crates })
+    }
+
+    pub fn crate_ids(&self) -> impl Iterator<Item = ItemId> + '_ {
+        self.crates
+            .values()
+            .flat_map(|crate_| &crate_.index)
+            .filter_map(|(_id, item)| match &item.inner {
+                rustdoc_types::ItemEnum::Module(m) if m.is_crate && item.crate_id == 0 => {
+                    let name = item.name.as_ref().expect("crate module should have a name");
+                    Some(ItemId::crate_root(CrateId { name }))
                 }
-            }
-        }
-        Self { crates, stdlib_crates }
+                _ => None,
+            })
     }
 
-    pub fn crate_ids(&self) -> impl Iterator<Item=CrateId> + '_ {
-        self.crates.iter()
-            .map(|c| c.id())
-    }
-
-    pub fn get_crate<'a>(&'a self, id: &CrateId) -> &'a Crate {
-        self.try_get_crate(id)
-            .unwrap_or_else(|| panic!("no analysis for crate \"{}\"", id.name))
-    }
-
-    pub fn try_get_crate<'a>(&'a self, id: &CrateId) -> Option<&'a Crate> {
-        self.crates.iter()
-            .find(|c| c.matches_id(id))
-    }
-
-    pub fn defs<'a>(&'a self, crate_id: &CrateId, parent_id: Option<rls_data::Id>)
-        -> impl Iterator<Item=&'a rls_data::Def> + 'a
+    pub fn items<'a, 'b>(
+        &'a self,
+        parent_id: &'b ItemId<'a>,
+    ) -> impl Iterator<Item = (ItemId<'a>, Item<'a>)> + 'b
+    where
+        'a: 'b,
     {
-        let a = &self.get_crate(crate_id).inner.analysis;
-
-        let parent = match parent_id {
-            None => {
-                a.defs.iter()
-                    .find(|def| {
-                        def.kind == rls_data::DefKind::Mod
-                            && def.name.is_empty()
-                    })
-                    .expect("missing root module")
-            }
-            Some(id) => {
-                a.defs.iter()
-                    .find(|def| def.id == id)
-                    .unwrap_or_else(|| panic!("no def found for ID {:?}", id))
-            }
+        let parent = {
+            let ItemId(parent_crate, parent_id) = parent_id;
+            let crate_ = &self
+                .crates
+                .get(parent_crate.name)
+                .unwrap_or_else(|| panic!("no crate {parent_crate:?}"));
+            let id = if parent_id == &EMPTY_ID {
+                &crate_.root
+            } else {
+                parent_id
+            };
+            crate_
+                .index
+                .get(id)
+                .unwrap_or_else(|| panic!("no id {id:?} in {parent_crate:?}"))
         };
 
-        a.defs.iter()
-            .filter(move |def| parent.children.contains(&def.id))
+        use rustdoc_types::ItemEnum::*;
+        let children: Vec<&'a rustdoc_types::Id> = match &parent.inner {
+            Module(m) => m.items.iter().collect(),
+            ExternCrate { .. } => vec![],
+            Import(_) => vec![],
+            Union(u) => u.fields.iter().chain(&u.impls).collect(),
+            Struct(s) => {
+                let fields = match &s.kind {
+                    rustdoc_types::StructKind::Unit => vec![],
+                    rustdoc_types::StructKind::Tuple(t) => {
+                        t.iter().filter_map(|x| x.as_ref()).collect()
+                    }
+                    rustdoc_types::StructKind::Plain { fields, .. } => fields.iter().collect(),
+                };
+                fields.into_iter().chain(&s.impls).collect()
+            }
+            StructField(ty) => type_ids(ty),
+            Enum(e) => e.variants.iter().chain(&e.impls).collect(),
+            Variant(v) => match &v.kind {
+                rustdoc_types::VariantKind::Plain => vec![],
+                rustdoc_types::VariantKind::Tuple(t) => {
+                    t.iter().filter_map(|id| id.as_ref()).collect()
+                }
+                rustdoc_types::VariantKind::Struct { fields, .. } => fields.iter().collect(),
+            },
+            Function(_) => vec![],
+            Trait(t) => {
+                // TODO: also find impls?
+                t.items.iter().collect()
+            }
+            TraitAlias(_) => vec![],
+            Impl(i) => {
+                i.items
+                    .iter()
+                    // Add a reference to the trait itself too if it's not an inherent impl:
+                    .chain(i.trait_.as_ref().map(|t| &t.id))
+                    .collect()
+            }
+            TypeAlias(ty) => type_ids(&ty.type_),
+            OpaqueTy(_) => vec![],
+            Constant(_) => vec![],
+            Static(_) => vec![],
+            ForeignType => vec![],
+            Macro(_) => vec![],
+            ProcMacro(_) => vec![],
+            Primitive(_) => vec![],
+            AssocConst { .. } => vec![],
+            AssocType { .. } => vec![],
+        };
+
+        children
+            .into_iter()
+            .filter_map(move |id| self.get_item(parent_id.crate_sibling(id)))
     }
 
-    pub fn get_def<'a>(&'a self, crate_id: &CrateId, id: rls_data::Id)
-        -> Option<&'a rls_data::Def>
-    {
-        if id.krate != 0 {
-            // External definition. Switch to the defining crate and lookup there.
-            // WARNING: the returned def's IDs are all relative to the external crate, not the
-            // passed-in crate ID, so use with caution.
-            let ext_crate_id = self.get_external_crate_id(crate_id, id)?;
-            return self.get_def(
-                ext_crate_id,
-                rls_data::Id {
-                    krate: 0,
-                    index: id.index,
-                })
-        }
-        self.try_get_crate(crate_id)?
-            .inner
-            .analysis
-            .defs
-            .iter()
-            .find(|def| def.id == id)
-    }
-
-    pub fn impls<'a>(&'a self, crate_id: &CrateId, parent_id: rls_data::Id)
-        -> impl Iterator<Item=ImplDetails> + 'a
-    {
-        self.get_crate(crate_id)
-            .inner
-            .analysis
-            .relations
-            .iter()
-            .filter_map(move |rel| match rel.kind {
-                rls_data::RelationKind::Impl { id: impl_id } => {
-                    if rel.from == parent_id {
-                        let trait_id = match rel.to {
-                            rls_data::Id { krate: std::u32::MAX, index: std::u32::MAX } => None,
-                            other => Some(other),
-                        };
-                        Some(ImplDetails {
-                            impl_id,
-                            impl_on: rel.from,
-                            trait_id,
-                            span: rel.span.clone(),
-                        })
+    pub fn get_item<'a>(&'a self, id: ItemId<'a>) -> Option<(ItemId<'a>, Item<'a>)> {
+        let ItemId(local_crate, local_id) = &id;
+        if let Some(item) = self.crates.get(local_crate.name)?.index.get(local_id) {
+            Some((id, Item::Item(item)))
+        } else {
+            // Wasn't found in the local crate's index; look up the summary in paths.
+            let summary = self.crates[local_crate.name].paths.get(local_id)?;
+            let other_crate = &summary.path[0];
+            // Try looking up by path in the other crate's analysis (if we have it).
+            let other_id = self
+                .crates
+                .get(other_crate)?
+                .paths
+                .iter()
+                .find_map(|(id, other)| {
+                    if other.path == summary.path {
+                        Some(id)
                     } else {
                         None
                     }
-                }
-                rls_data::RelationKind::SuperTrait => None,
-            })
+                })?;
+            let item = self.crates[other_crate].index.get(other_id)?;
+            Some((
+                ItemId(CrateId { name: other_crate }, other_id),
+                Item::Item(item),
+            ))
+        }
     }
 
-    pub fn get_impl<'a>(&'a self, crate_id: &CrateId, impl_id: u32)
-        -> Option<&'a rls_data::Impl>
-    {
-        self.get_crate(crate_id)
-            .inner
-            .analysis
-            .impls
+    pub fn get_path<'a>(&'a self, id: ItemId<'a>) -> &'a [String] {
+        &self.crates[id.0.name].paths[id.1].path[..]
+    }
+}
+
+fn parse_json(p: &Path) -> anyhow::Result<rustdoc_types::Crate> {
+    let f = File::open(p)?;
+    let data = serde_json::from_reader(BufReader::new(f))?;
+    Ok(data)
+}
+
+fn type_ids(ty: &rustdoc_types::Type) -> Vec<&rustdoc_types::Id> {
+    use rustdoc_types::Type::*;
+    match ty {
+        ResolvedPath(path) => vec![&path.id],
+        DynTrait(dt) => dt.traits.iter().map(|t| &t.trait_.id).collect(),
+        Generic(_) => vec![],
+        Primitive(_) => vec![],
+        FunctionPointer(_) => vec![],
+        Tuple(types) => types.iter().flat_map(type_ids).collect(),
+        Slice(ty) => type_ids(ty),
+        Array { type_, .. } => type_ids(type_),
+        ImplTrait(generics) => generics
             .iter()
-            .find(|i| i.id == impl_id)
-    }
-
-    pub fn get_external_crate_id<'a>(&'a self, crate_id: &CrateId, id: rls_data::Id)
-        -> Option<&'a CrateId>
-    {
-        self.get_crate(crate_id)
-            .external_crates
-            .get(&id.krate)
+            .filter_map(|g| match g {
+                rustdoc_types::GenericBound::TraitBound { trait_, .. } => Some(&trait_.id),
+                rustdoc_types::GenericBound::Outlives(_) => None,
+            })
+            .collect(),
+        Infer => vec![],
+        RawPointer { type_, .. } => type_ids(type_),
+        BorrowedRef { type_, .. } => type_ids(type_),
+        QualifiedPath {
+            self_type, trait_, ..
+        } => {
+            let from_self = type_ids(self_type);
+            if let Some(t) = trait_ {
+                [&from_self[..], &[&t.id]].concat()
+            } else {
+                from_self
+            }
+        }
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct ImplDetails {
-    pub impl_id: u32,
-    pub trait_id: Option<rls_data::Id>,
-    pub impl_on: rls_data::Id,
-    pub span: rls_data::SpanData,
+pub struct CrateId<'a> {
+    pub name: &'a String,
 }
 
-#[derive(Debug)]
-pub struct Crate {
-    inner: rls_analysis::Crate,
-    crate_type: CrateType,
-    external_crates: BTreeMap<u32, CrateId>,
-}
+#[derive(Debug, Clone)]
+pub struct ItemId<'a>(CrateId<'a>, &'a rustdoc_types::Id);
 
-impl Crate {
-    pub fn id(&self) -> CrateId {
-        CrateId {
-            name: self.inner.id.name.clone(),
-            crate_type: self.crate_type,
-            disambiguator: self.inner.id.disambiguator,
-        }
+impl<'a> ItemId<'a> {
+    pub fn crate_root(crate_id: CrateId<'a>) -> Self {
+        Self(crate_id, EMPTY_ID)
     }
 
-    pub fn matches_id(&self, id: &CrateId) -> bool {
-        self.inner.id.name == id.name
-            && self.inner.id.disambiguator == id.disambiguator
+    pub fn crate_name(&self) -> &str {
+        self.0.name
+    }
+
+    pub fn crate_sibling(&self, other_id: &'a rustdoc_types::Id) -> Self {
+        Self(CrateId { name: self.0.name }, other_id)
     }
 }
 
-impl std::convert::AsRef<rls_analysis::Crate> for Crate {
-    fn as_ref(&self) -> &rls_analysis::Crate {
-        &self.inner
-    }
-}
-
-impl TryFrom<rls_analysis::Crate> for Crate {
-    type Error = String;
-    fn try_from(inner: rls_analysis::Crate) -> Result<Self, Self::Error> {
-        let mut crate_type: Option<CrateType> = None;
-        let rustc_args = match inner.analysis.compilation.as_ref() {
-            Some(opts) => &opts.arguments,
-            None => {
-                return Err(format!("missing compilation options in analysis of crate {:?}", inner.id));
-            }
-        };
-        for argpair in rustc_args.windows(2) {
-            if argpair[0] == "--crate-type" {
-                crate_type = Some(argpair[1].parse::<CrateType>()?);
-                break;
-            }
-        }
-        let crate_type = match crate_type {
-            Some(val) => val,
-            None => {
-                return Err(format!("missing crate-type in analysis of crate {:?}", inner.id));
-            }
-        };
-        let external_crates = inner.analysis.prelude.as_ref()
-            .map(|p| &p.external_crates[..])
-            .unwrap_or(&[])
-            .iter()
-            .map(|ext| (ext.num, CrateId {
-                name: ext.id.name.clone(),
-                disambiguator: ext.id.disambiguator,
-                crate_type: CrateType::Lib,
-            }))
-            .collect();
-        Ok(Self {
-            inner,
-            crate_type,
-            external_crates,
-        })
-    }
-}
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct CrateId {
-    pub name: String,
-    pub crate_type: CrateType,
-    pub disambiguator: (u64, u64),
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug, Clone)]
+pub enum Item<'a> {
+    Root,
+    Item(&'a rustdoc_types::Item),
 }
 
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -285,85 +304,4 @@ impl std::str::FromStr for CrateType {
             }
         })
     }
-}
-
-#[derive(Clone)]
-struct Loader {
-    deps_dir: PathBuf,
-    stdlib_dir: Option<PathBuf>,
-}
-
-impl AnalysisLoader for Loader {
-    fn needs_hard_reload(&self, _path_prefix: &Path) -> bool {
-        true
-    }
-
-    fn fresh_host(&self) -> AnalysisHost<Self> {
-        AnalysisHost::new_with_loader(self.clone())
-    }
-
-    fn set_path_prefix(&mut self, prefix: &Path) {
-        unimplemented!("prefix: {prefix:?}");
-    }
-
-    fn abs_path_prefix(&self) -> Option<PathBuf> {
-        None
-    }
-
-    fn search_directories(&self) -> Vec<SearchDirectory> {
-        let mut paths = vec![
-            SearchDirectory { path : self.deps_dir.clone(), prefix_rewrite: None }
-        ];
-        if let Some(path) = self.stdlib_dir.clone() {
-            paths.push(SearchDirectory { path, prefix_rewrite: None });
-        }
-        paths
-    }
-}
-
-impl Loader {
-    pub fn new(path: impl Into<PathBuf>, target: &str) -> Self {
-        let deps_dir = path.into()
-            .join("target")
-            .join(SUBDIR)
-            .join(target)
-            .join("deps")
-            .join("save-analysis");
-
-        Self {
-            deps_dir,
-            stdlib_dir: get_stdlib_analysis_path(),
-        }
-    }
-}
-
-fn get_stdlib_analysis_path() -> Option<PathBuf> {
-    Command::new("rustc")
-        .arg("--print")
-        .arg("target-libdir")
-        .output()
-        .map_err(|e| {
-            eprintln!("Error running 'rustc --print target-libdir': {e}");
-            e
-        })
-        .ok()
-        .and_then(|out| {
-            if out.status.success() {
-                let path = String::from_utf8(out.stdout)
-                    .map_err(|e| {
-                        eprintln!("'rustc --print target-libdir' returned invalid utf8: {e}");
-                        e
-                    })
-                    .ok()?;
-
-                Some(PathBuf::from(path.trim_end())
-                    .join("..")
-                    .join("analysis"))
-            } else {
-                eprintln!("Error running 'rustc --print target-libdir': {}", out.status);
-                eprint!("Command stderr: ");
-                stderr().write_all(&out.stderr).unwrap();
-                None
-            }
-        })
 }
