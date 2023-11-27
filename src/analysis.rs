@@ -120,21 +120,11 @@ impl Analysis {
         let (parent_id, parent) = if parent_id == &EMPTY_ITEM_ID {
             (parent_id.clone(), None)
         } else {
-            let input_id = if parent_id.1 == EMPTY_ID {
-                // Fake ID of the crate root. Look up what the root actually is.
-                let crate_ = &self.crates[parent_id.0.name];
-                parent_id.crate_sibling(&crate_.root)
-            } else {
-                parent_id.clone()
-            };
-
-            match self.get_item(input_id) {
-                Some((resolved_id, item)) => {
-                    match item {
-                        Item::Item(i) => (resolved_id, Some(i)),
-                        Item::Root => panic!("unexpected Item::Root from get_item()"),
-                    }
-                }
+            match self.get_item(parent_id.clone()) {
+                Some((resolved_id, item)) => match item {
+                    Item::Item(i) => (resolved_id, Some(i)),
+                    Item::Root => panic!("unexpected Item::Root from get_item()"),
+                },
                 None => (parent_id.clone(), None),
             }
         };
@@ -205,19 +195,27 @@ impl Analysis {
         if id == EMPTY_ITEM_ID {
             return None;
         }
-        let ItemId(local_crate, local_id) = &id;
-        if let Some(item) = self.crates.get(local_crate.name)?.index.get(local_id) {
+        let ItemId(local_crate_id, mut local_id) = &id;
+        let local_crate = self.crates.get(local_crate_id.name)?;
+        if local_id == EMPTY_ID {
+            // Fake ID of the crate root. Look up what the root actually is.
+            local_id = &local_crate.root;
+        }
+        if let Some(item) = local_crate.index.get(local_id) {
             Some((id, Item::Item(item)))
         } else {
             // Wasn't found in the local crate's index; look up the summary in paths.
-            let summary = self.crates[local_crate.name].paths.get(local_id)?;
+            let summary = local_crate.paths.get(local_id)?;
             let other_crate = &summary.path[0];
             // Try looking up by path in the other crate's analysis (if we have it).
             let other_id = self
                 .crates
                 .get(other_crate)
                 .or_else(|| {
-                    eprintln!("no analysis found for crate {other_crate}");
+                    eprintln!(
+                        "no analysis found for crate {other_crate} (looking for {})",
+                        summary.path.join("::")
+                    );
                     eprintln!("{}", std::backtrace::Backtrace::capture());
                     None
                 })?
@@ -229,6 +227,11 @@ impl Analysis {
                     } else {
                         None
                     }
+                })
+                .or_else(|| {
+                    eprintln!("no item found for {}", summary.path.join("::"));
+                    eprintln!("{}", std::backtrace::Backtrace::capture());
+                    None
                 })?;
             let item = self.crates[other_crate].index.get(other_id)?;
             Some((
