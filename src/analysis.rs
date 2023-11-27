@@ -115,84 +115,87 @@ impl Analysis {
     where
         'a: 'b,
     {
-        let parent = if parent_id == &EMPTY_ITEM_ID {
-            // pick some random item
-            self.crates
-                .values()
-                .next()
-                .unwrap()
-                .index
-                .values()
-                .next()
-                .unwrap()
+        // Look up the parent item, including possibly resolving it to an item in a different crate
+        // (i.e. parent_id may change).
+        let (parent_id, parent) = if parent_id == &EMPTY_ITEM_ID {
+            (parent_id.clone(), None)
         } else {
-            let ItemId(parent_crate, parent_id) = parent_id;
-            let crate_ = &self
-                .crates
-                .get(parent_crate.name)
-                .unwrap_or_else(|| panic!("no crate {parent_crate:?}"));
-            let id = if parent_id == &EMPTY_ID {
-                &crate_.root
+            let input_id = if parent_id.1 == EMPTY_ID {
+                // Fake ID of the crate root. Look up what the root actually is.
+                let crate_ = &self.crates[parent_id.0.name];
+                parent_id.crate_sibling(&crate_.root)
             } else {
-                parent_id
+                parent_id.clone()
             };
-            crate_
-                .index
-                .get(id)
-                .unwrap_or_else(|| panic!("no id {id:?} in {parent_crate:?}"))
-        };
 
-        use rustdoc_types::ItemEnum::*;
-        let children: Vec<&'a rustdoc_types::Id> = match &parent.inner {
-            _ if parent_id == &EMPTY_ITEM_ID => vec![],
-            Module(m) => m.items.iter().collect(),
-            ExternCrate { .. } => vec![],
-            Import(_) => vec![],
-            Union(u) => u.fields.iter().chain(&u.impls).collect(),
-            Struct(s) => {
-                let fields = match &s.kind {
-                    rustdoc_types::StructKind::Unit => vec![],
-                    rustdoc_types::StructKind::Tuple(t) => {
-                        t.iter().filter_map(|x| x.as_ref()).collect()
+            match self.get_item(input_id) {
+                Some((resolved_id, item)) => {
+                    match item {
+                        Item::Item(i) => (resolved_id, Some(i)),
+                        Item::Root => panic!("unexpected Item::Root from get_item()"),
                     }
-                    rustdoc_types::StructKind::Plain { fields, .. } => fields.iter().collect(),
-                };
-                fields.into_iter().chain(&s.impls).collect()
-            }
-            StructField(ty) => type_ids(ty),
-            Enum(e) => e.variants.iter().chain(&e.impls).collect(),
-            Variant(v) => match &v.kind {
-                rustdoc_types::VariantKind::Plain => vec![],
-                rustdoc_types::VariantKind::Tuple(t) => {
-                    t.iter().filter_map(|id| id.as_ref()).collect()
                 }
-                rustdoc_types::VariantKind::Struct { fields, .. } => fields.iter().collect(),
-            },
-            Function(_) => vec![],
-            Trait(t) => {
-                // TODO: also find impls?
-                t.items.iter().collect()
+                None => (parent_id.clone(), None),
             }
-            TraitAlias(_) => vec![],
-            Impl(i) => {
-                i.items
-                    .iter()
-                    // Add a reference to the trait itself too if it's not an inherent impl:
-                    .chain(i.trait_.as_ref().map(|t| &t.id))
-                    .collect()
-            }
-            TypeAlias(ty) => type_ids(&ty.type_),
-            OpaqueTy(_) => vec![],
-            Constant(_) => vec![],
-            Static(_) => vec![],
-            ForeignType => vec![],
-            Macro(_) => vec![],
-            ProcMacro(_) => vec![],
-            Primitive(_) => vec![],
-            AssocConst { .. } => vec![],
-            AssocType { .. } => vec![],
         };
 
+        // Collect (crate-local) IDs of children depending on the kind of parent it is.
+        let children: Vec<&'a rustdoc_types::Id> = if let Some(parent) = parent {
+            use rustdoc_types::ItemEnum::*;
+            match &parent.inner {
+                _ if parent_id == EMPTY_ITEM_ID => vec![],
+                Module(m) => m.items.iter().collect(),
+                ExternCrate { .. } => vec![],
+                Import(_) => vec![],
+                Union(u) => u.fields.iter().chain(&u.impls).collect(),
+                Struct(s) => {
+                    let fields = match &s.kind {
+                        rustdoc_types::StructKind::Unit => vec![],
+                        rustdoc_types::StructKind::Tuple(t) => {
+                            t.iter().filter_map(|x| x.as_ref()).collect()
+                        }
+                        rustdoc_types::StructKind::Plain { fields, .. } => fields.iter().collect(),
+                    };
+                    fields.into_iter().chain(&s.impls).collect()
+                }
+                StructField(ty) => type_ids(ty),
+                Enum(e) => e.variants.iter().chain(&e.impls).collect(),
+                Variant(v) => match &v.kind {
+                    rustdoc_types::VariantKind::Plain => vec![],
+                    rustdoc_types::VariantKind::Tuple(t) => {
+                        t.iter().filter_map(|id| id.as_ref()).collect()
+                    }
+                    rustdoc_types::VariantKind::Struct { fields, .. } => fields.iter().collect(),
+                },
+                Function(_) => vec![],
+                Trait(t) => {
+                    // TODO: also find impls?
+                    t.items.iter().collect()
+                }
+                TraitAlias(_) => vec![],
+                Impl(i) => {
+                    i.items
+                        .iter()
+                        // Add a reference to the trait itself too if it's not an inherent impl:
+                        .chain(i.trait_.as_ref().map(|t| &t.id))
+                        .collect()
+                }
+                TypeAlias(ty) => type_ids(&ty.type_),
+                OpaqueTy(_) => vec![],
+                Constant(_) => vec![],
+                Static(_) => vec![],
+                ForeignType => vec![],
+                Macro(_) => vec![],
+                ProcMacro(_) => vec![],
+                Primitive(_) => vec![],
+                AssocConst { .. } => vec![],
+                AssocType { .. } => vec![],
+            }
+        } else {
+            vec![]
+        };
+
+        // Look up and return all the children. The lookup may follow references into other crates.
         children
             .into_iter()
             .filter_map(move |id| self.get_item(parent_id.crate_sibling(id)))
@@ -212,7 +215,12 @@ impl Analysis {
             // Try looking up by path in the other crate's analysis (if we have it).
             let other_id = self
                 .crates
-                .get(other_crate)?
+                .get(other_crate)
+                .or_else(|| {
+                    eprintln!("no analysis found for crate {other_crate}");
+                    eprintln!("{}", std::backtrace::Backtrace::capture());
+                    None
+                })?
                 .paths
                 .iter()
                 .find_map(|(id, other)| {
