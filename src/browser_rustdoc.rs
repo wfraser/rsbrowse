@@ -36,13 +36,17 @@ impl RustdocBrowser {
             Impl(i) => {
                 return if let Some(trait_) = &i.trait_ {
                     let full_path = self.analysis.get_path(id.crate_sibling(&trait_.id));
-                    if full_path[0] == id.crate_name() {
+                    let mut trait_name = if full_path[0] == id.crate_name() {
                         // trait in local crate, use trait name
-                        format!("impl {}", trait_.name)
+                        trait_.name.clone()
                     } else {
                         // trait in foreign crate, use full path
-                        format!("impl {}", full_path.join("::"))
+                        full_path.join("::")
+                    };
+                    if let Some(g) = &trait_.args {
+                        trait_name.push_str(&generic_label(g));
                     }
+                    format!("impl {trait_name}")
                 } else {
                     "impl Self".to_string()
                 };

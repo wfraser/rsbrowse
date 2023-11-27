@@ -147,11 +147,11 @@ fn list_items() {
 
     let y_s = mod_y_items.by_label("struct S");
     let y_s_items = BROWSER.list_items(&y_s.0);
-    assert_eq!(y_s_items.labels(), &["impl Self", "impl Trait",]);
+    assert_eq!(y_s_items.labels(), &["impl Self", "impl Trait<u64>",]);
 
     let z_s = mod_z_items.by_label("struct S");
     let z_s_items = BROWSER.list_items(&z_s.0);
-    assert_eq!(z_s_items.labels(), &["impl Trait"]);
+    assert_eq!(z_s_items.labels(), &["impl Trait<String>"]);
 
     // Pane 4
 
@@ -183,12 +183,12 @@ fn list_items() {
     let y_s_self_items = BROWSER.list_items(&y_s_self.0);
     assert_eq!(y_s_self_items.labels(), &["fn spoopadoop"]);
 
-    let y_s_trait = y_s_items.by_label("impl Trait");
+    let y_s_trait = y_s_items.by_label("impl Trait<u64>");
     let y_s_trait_items = BROWSER.list_items(&y_s_trait.0);
     // includes "fn method" because it overrides the default in the trait:
     assert_eq!(y_s_trait_items.labels(), &["fn method", "trait Trait"]);
 
-    let z_s_trait = z_s_items.by_label("impl Trait");
+    let z_s_trait = z_s_items.by_label("impl Trait<String>");
     let z_s_trait_items = BROWSER.list_items(&z_s_trait.0);
     // doesn't include "fn method" because it didn't override it:
     assert_eq!(z_s_trait_items.labels(), &["trait Trait"]);
