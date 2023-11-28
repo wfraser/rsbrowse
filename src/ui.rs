@@ -126,14 +126,13 @@ fn about(ui: &mut Cursive) {
         Dialog::around(
             TextView::new(format!(
                 "rsbrowse/{}\n\
-                    {}{}by Bill Fraser\n\
+                    {}by Bill Fraser\n\
                     https://github.com/wfraser/rsbrowse",
                 env!("CARGO_PKG_VERSION"),
-                env!("GIT_COMMIT_HASH"),
-                if env!("GIT_COMMIT_HASH").is_empty() {
-                    ""
+                if let Some(git) = option_env!("GIT_COMMIT_HASH") {
+                    format!("git:{git}\n")
                 } else {
-                    "\n"
+                    String::new()
                 },
             ))
             .h_align(cursive::align::HAlign::Center),

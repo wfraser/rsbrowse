@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate log;
+
 pub mod analysis;
 pub mod browser_rustdoc;
 pub mod browser_trait;

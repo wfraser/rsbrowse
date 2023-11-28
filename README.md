@@ -32,6 +32,6 @@ To exit, press ESC to activate the menu bar, and right arrow to select Quit.
 
 # Help
 
-rsbrowse is still pretty new and may have bugs. Unfortunately, as a curses application, panic text written to stderr gets lost. To capture it, redirect it, like `rsbrowse <path> 2>err.log` and try and reproduce what you did. (Also set `RUST_BACKTRACE=1` while you're at it.) Then please file an issue :)
+rsbrowse is still pretty new and may have bugs. Unfortunately, as a curses application, text written to stderr gets lost. Log messages are already redirected to a file for this reason, but for panic text this doesn't work. To capture a panic message, redirect stderr to a file, like `rsbrowse <path> 2>err.log` and try and reproduce what you did. (Also set `RUST_BACKTRACE=1` while you're at it.) Then please file an issue :)
 
 To see a list of TODOs and ideas for future enhancements, see [`TODO.md`](TODO.md).

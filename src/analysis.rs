@@ -1,3 +1,4 @@
+use std::backtrace::{Backtrace, BacktraceStatus};
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::BufReader;
@@ -62,7 +63,10 @@ impl Analysis {
             }
         }
 
-        copy_stdlib_json(workspace_path, toolchain).context("copying stdlib analysis")?;
+        if let Err(e) = copy_stdlib_json(workspace_path, toolchain) {
+            error!("Error copying stdlib analysis: {e}");
+            error!("Standard library types will not be inspectable.");
+        }
 
         Ok(())
     }
@@ -213,11 +217,14 @@ impl Analysis {
                 .crates
                 .get(other_crate)
                 .or_else(|| {
-                    eprintln!(
+                    warn!(
                         "no analysis found for crate {other_crate} (looking for {})",
                         summary.path.join("::")
                     );
-                    eprintln!("{}", std::backtrace::Backtrace::capture());
+                    let bt = Backtrace::capture();
+                    if bt.status() == BacktraceStatus::Captured {
+                        warn!("{bt}");
+                    }
                     None
                 })?
                 .paths
@@ -230,8 +237,8 @@ impl Analysis {
                     }
                 })
                 .or_else(|| {
-                    eprintln!("no item found for {}", summary.path.join("::"));
-                    eprintln!("{}", std::backtrace::Backtrace::capture());
+                    error!("no item found for {}", summary.path.join("::"));
+                    error!("{}", std::backtrace::Backtrace::capture());
                     None
                 })?;
             let item = self.crates[other_crate].index.get(other_id)?;
@@ -251,7 +258,7 @@ impl Analysis {
                 .paths
                 .get(id.1)
                 .or_else(|| {
-                    eprintln!("missing path for {id:?} ({name_hint})");
+                    warn!("missing path for {id:?} ({name_hint})");
                     None
                 })?
                 .path[..],
