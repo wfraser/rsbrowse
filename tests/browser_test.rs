@@ -77,7 +77,19 @@ impl<'a> ItemExt for Item<'a> {
 #[test]
 fn list_items() {
     let crates = BROWSER.list_crates();
-    assert_eq!(crates.labels(), &["anyhow", "externcrate", "testcrate"]);
+    assert_eq!(
+        crates.labels(),
+        &[
+            "alloc",
+            "anyhow",
+            "core",
+            "externcrate",
+            "proc_macro",
+            "std",
+            "test",
+            "testcrate"
+        ]
+    );
 
     let crate_id = crates.by_label("testcrate");
 
