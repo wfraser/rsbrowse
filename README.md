@@ -14,7 +14,6 @@ rsbrowse runs `rustdoc` on your code and tells it to save the type info for ever
 * nightly rust toolchain (this is needed to use the currently unstable `--output-format=json` flag in rustdoc)
 * optional but *highly recommended*: the rustdoc JSON for the standard library
   * you can install this using `rustup component add rust-docs-json --toolchain nightly`
-  * TODO: actually consuming this is not yet implemented
 
 # Usage
 
