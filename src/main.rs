@@ -5,7 +5,7 @@ use std::sync::Mutex;
 use anyhow::Context;
 use clap::Parser;
 use lazy_static::lazy_static;
-use log::{info, Log};
+use log::{error, info, Log};
 use rsbrowse::analysis::Analysis;
 use rsbrowse::browser_rustdoc::RustdocBrowser;
 use rsbrowse::ui;
@@ -69,6 +69,11 @@ fn log_to_file() -> anyhow::Result<()> {
     let path = file.path().with_file_name("rsbrowse.log");
     let file = file.persist(&path).context("failed to persist logfile")?;
     *LOGGER.sink.lock().unwrap() = Some(Box::new(file));
+    std::panic::set_hook(Box::new(|panic| {
+        error!("{panic}");
+        // try printing to stderr too
+        eprintln!("{panic}");
+    }));
     eprintln!("logs written to {path:?}");
     Ok(())
 }

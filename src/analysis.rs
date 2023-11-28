@@ -221,10 +221,6 @@ impl Analysis {
                         "no analysis found for crate {other_crate} (looking for {})",
                         summary.path.join("::")
                     );
-                    let bt = Backtrace::capture();
-                    if bt.status() == BacktraceStatus::Captured {
-                        warn!("{bt}");
-                    }
                     None
                 })?
                 .paths
@@ -238,7 +234,10 @@ impl Analysis {
                 })
                 .or_else(|| {
                     error!("no item found for {}", summary.path.join("::"));
-                    error!("{}", std::backtrace::Backtrace::capture());
+                    let bt = Backtrace::capture();
+                    if bt.status() == BacktraceStatus::Captured {
+                        error!("{bt}");
+                    }
                     None
                 })?;
             let item = self.crates[other_crate].index.get(other_id)?;
