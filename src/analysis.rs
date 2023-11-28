@@ -35,6 +35,8 @@ impl Analysis {
             cmd.arg(format!("+{toolchain}"));
         }
 
+        let workspace_path = workspace_path.as_ref();
+
         let cargo_status = cmd
             .arg("doc")
             .arg("--target-dir")
@@ -59,15 +61,14 @@ impl Analysis {
                 anyhow::bail!("'cargo build' killed by signal");
             }
         }
+
+        copy_stdlib_json(workspace_path, toolchain).context("copying stdlib analysis")?;
+
         Ok(())
     }
 
     pub fn load(workspace_path: impl Into<PathBuf>) -> anyhow::Result<Self> {
-        let root: PathBuf = workspace_path
-            .into()
-            .join("target")
-            .join(SUBDIR)
-            .join("doc");
+        let root = json_root(&workspace_path.into());
         let mut paths = vec![];
         for res in fs::read_dir(root)? {
             let entry = res?;
@@ -241,11 +242,20 @@ impl Analysis {
         }
     }
 
-    pub fn get_path<'a>(&'a self, id: ItemId<'a>) -> &'a [String] {
+    pub fn get_path<'a>(&'a self, id: ItemId<'a>, name_hint: &str) -> Option<&'a [String]> {
         if id == EMPTY_ITEM_ID {
-            return &[];
+            return None;
         }
-        &self.crates[id.0.name].paths[id.1].path[..]
+        Some(
+            &self.crates[id.0.name]
+                .paths
+                .get(id.1)
+                .or_else(|| {
+                    eprintln!("missing path for {id:?} ({name_hint})");
+                    None
+                })?
+                .path[..],
+        )
     }
 }
 
@@ -287,6 +297,53 @@ pub fn type_ids(ty: &rustdoc_types::Type) -> Vec<&rustdoc_types::Id> {
             }
         }
     }
+}
+
+fn json_root(workspace_path: &Path) -> PathBuf {
+    workspace_path.join("target").join(SUBDIR).join("doc")
+}
+
+fn get_stdlib_analysis_path(toolchain: Option<&str>) -> anyhow::Result<PathBuf> {
+    let mut cmd = Command::new("rustc");
+    if let Some(toolchain) = toolchain {
+        cmd.arg(format!("+{toolchain}"));
+    }
+
+    let out = cmd
+        .arg("--print")
+        .arg("sysroot")
+        .output()
+        .context("Error running 'rustc --print sysroot'")?;
+
+    if !out.status.success() {
+        let mut msg = format!("Error running 'rustc --print sysroot': {}", out.status).into_bytes();
+        msg.extend(b"\nCommand stderr: ");
+        msg.extend(&out.stderr);
+        anyhow::bail!(String::from_utf8_lossy(&msg).into_owned());
+    }
+
+    let path = String::from_utf8(out.stdout).context("'rustc --print sysroot' output")?;
+
+    Ok(PathBuf::from(path.trim())
+        .join("share")
+        .join("doc")
+        .join("rust")
+        .join("json"))
+}
+
+fn copy_stdlib_json(workspace_path: &Path, toolchain: Option<&str>) -> anyhow::Result<()> {
+    let src = get_stdlib_analysis_path(toolchain)?;
+    let dst = json_root(workspace_path);
+    for res in fs::read_dir(&src).with_context(|| src.display().to_string())? {
+        let entry = res?;
+        if entry.file_name().as_encoded_bytes().ends_with(b".json") {
+            let src_path = entry.path();
+            println!("copying {:?}", entry.file_name());
+            fs::copy(&src_path, dst.join(entry.file_name()))
+                .with_context(|| format!("copy {src_path:?}"))?;
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq)]

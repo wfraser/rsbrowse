@@ -35,14 +35,25 @@ impl RustdocBrowser {
             TraitAlias(_) => "trait alias",
             Impl(i) => {
                 return if let Some(trait_) = &i.trait_ {
-                    let full_path = self.analysis.get_path(id.crate_sibling(&trait_.id));
-                    let mut trait_name = if full_path[0] == id.crate_name() {
+                    let path = self
+                        .analysis
+                        .get_path(id.crate_sibling(&trait_.id), &trait_.name);
+
+                    /* requires #![feature(let_chains)]
+                    let mut trait_name = if let Some(path) = path && path[0] != id.crate_name() {
+                        path.join("::")
+                    } else {
+                        trait_.name.clone()
+                    };*/
+                    #[allow(clippy::unnecessary_unwrap)] // until if-let chains are stabilized
+                    let mut trait_name = if path.is_none() || path.unwrap()[0] == id.crate_name() {
                         // trait in local crate, use trait name
                         trait_.name.clone()
                     } else {
                         // trait in foreign crate, use full path
-                        full_path.join("::")
+                        path.unwrap().join("::")
                     };
+
                     if let Some(g) = &trait_.args {
                         trait_name.push_str(&generic_label(g));
                     }
