@@ -90,9 +90,14 @@ impl Analysis {
             }
         }
 
-        let progress = ProgressBar::new(paths.len() as u64).with_style(
-            ProgressStyle::with_template("{bar} {pos}/{len} {wide_msg}")?,
-        );
+        let progress = ProgressBar::new(paths.len() as u64)
+            .with_style(
+                ProgressStyle::with_template(
+                    "{prefix:>12.cyan.bold} [{bar:25}]: {pos}/{len} {wide_msg}",
+                )?
+                .progress_chars("=> "),
+            )
+            .with_prefix("Loading");
         let active = Mutex::new(vec![]);
 
         let crates = paths
