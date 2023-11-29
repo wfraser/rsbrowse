@@ -196,11 +196,8 @@ impl<'a> Browser for &'a RustdocBrowser {
                     Item::Item(item) => item,
                 };
 
-                // Remove the clutter of automatically derived, blanket, and synthetic trait impls.
+                // Remove the clutter of blanket, and synthetic trait impls.
                 use rustdoc_types::ItemEnum::*;
-                if inner.attrs.iter().any(|a| a == "#[automatically_derived]") {
-                    return None;
-                }
                 match &inner.inner {
                     Impl(i) if i.blanket_impl.is_some() || i.synthetic => None,
                     _ => Some((self.item_label(id.clone(), inner), (id, item))),
