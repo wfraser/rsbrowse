@@ -91,14 +91,10 @@ fn list_items() {
                 "proc_macro",
                 "std",
                 "test",
-                "testcrate"
-            ][..]
-        } else {
-            &[
-                "anyhow",
-                "externcrate",
                 "testcrate",
             ][..]
+        } else {
+            &["anyhow", "externcrate", "testcrate"][..]
         },
     );
 

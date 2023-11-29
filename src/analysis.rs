@@ -4,8 +4,10 @@ use std::fs::{self, File};
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
 
 use anyhow::{anyhow, Context};
+use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 
 /// Write the analysis data to a subdirectory under target/ with this name.
@@ -88,11 +90,28 @@ impl Analysis {
             }
         }
 
+        let progress = ProgressBar::new(paths.len() as u64).with_style(
+            ProgressStyle::with_template("{bar} {pos}/{len} {wide_msg}")?,
+        );
+        let active = Mutex::new(vec![]);
+
         let crates = paths
             .into_par_iter()
             .map(|(crate_name, path)| {
-                println!("reading {path:?}");
+                let filename = path.file_stem().unwrap().to_string_lossy().into_owned();
+                {
+                    let mut active = active.lock().unwrap();
+                    active.push(filename.clone());
+                    progress.println(format!("reading {path:?}"));
+                    progress.set_message(active.join(", "));
+                }
                 let data = parse_json(&path).with_context(|| path.display().to_string())?;
+                {
+                    let mut active = active.lock().unwrap();
+                    active.retain(|f| f != &filename);
+                    progress.set_message(active.join(", "));
+                    progress.inc(1);
+                }
                 Ok((crate_name, data))
             })
             .collect::<anyhow::Result<HashMap<_, _>>>()?;

@@ -1,6 +1,6 @@
 [package]
 name = "rsbrowse"
-version = "0.2.4"
+version = "0.2.5"
 authors = ["Bill Fraser <bill@wfraser.dev>"]
 description = "an interactive browser for the contents of Rust crates"
 edition = "2021"
@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1"
 clap = { version = "4.4.8", features = ["derive"] }
+indicatif = "0.17.7"
 lazy_static = "1"
 log = "0.4"
 rayon = "1.8.0"
