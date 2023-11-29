@@ -5,7 +5,7 @@ use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 use rayon::prelude::*;
 
 /// Write the analysis data to a subdirectory under target/ with this name.
@@ -309,7 +309,7 @@ fn json_root(workspace_path: &Path) -> PathBuf {
     workspace_path.join("target").join(SUBDIR).join("doc")
 }
 
-fn get_stdlib_analysis_path(toolchain: Option<&str>) -> anyhow::Result<PathBuf> {
+pub fn get_stdlib_analysis_path(toolchain: Option<&str>) -> anyhow::Result<PathBuf> {
     let mut cmd = Command::new("rustc");
     if let Some(toolchain) = toolchain {
         cmd.arg(format!("+{toolchain}"));
@@ -328,13 +328,19 @@ fn get_stdlib_analysis_path(toolchain: Option<&str>) -> anyhow::Result<PathBuf> 
         anyhow::bail!(String::from_utf8_lossy(&msg).into_owned());
     }
 
-    let path = String::from_utf8(out.stdout).context("'rustc --print sysroot' output")?;
+    let sysroot_path = String::from_utf8(out.stdout).context("'rustc --print sysroot' output")?;
 
-    Ok(PathBuf::from(path.trim())
+    let path = PathBuf::from(sysroot_path.trim())
         .join("share")
         .join("doc")
         .join("rust")
-        .join("json"))
+        .join("json");
+
+    if fs::metadata(&path)?.is_dir() {
+        Ok(path)
+    } else {
+        Err(anyhow!("{path:?} is something other than a directory"))
+    }
 }
 
 fn copy_stdlib_json(workspace_path: &Path, toolchain: Option<&str>) -> anyhow::Result<()> {

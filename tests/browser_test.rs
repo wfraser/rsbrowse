@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate lazy_static;
 
-use rsbrowse::analysis::{Analysis, Item};
+use rsbrowse::analysis::{self, Analysis, Item};
 use rsbrowse::browser_rustdoc::RustdocBrowser;
 use rsbrowse::browser_trait::Browser;
 use std::path::Path;
@@ -76,19 +76,30 @@ impl<'a> ItemExt for Item<'a> {
 
 #[test]
 fn list_items() {
+    let has_stdlib = analysis::get_stdlib_analysis_path(Some("nightly")).is_ok();
+    eprintln!("has_stdlib: {has_stdlib:?}");
+
     let crates = BROWSER.list_crates();
     assert_eq!(
         crates.labels(),
-        &[
-            "alloc",
-            "anyhow",
-            "core",
-            "externcrate",
-            "proc_macro",
-            "std",
-            "test",
-            "testcrate"
-        ]
+        if has_stdlib {
+            &[
+                "alloc",
+                "anyhow",
+                "core",
+                "externcrate",
+                "proc_macro",
+                "std",
+                "test",
+                "testcrate"
+            ][..]
+        } else {
+            &[
+                "anyhow",
+                "externcrate",
+                "testcrate",
+            ][..]
+        },
     );
 
     let crate_id = crates.by_label("testcrate");
