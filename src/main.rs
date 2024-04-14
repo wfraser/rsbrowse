@@ -12,6 +12,7 @@ use rsbrowse::ui;
 use tempfile::NamedTempFile;
 
 #[derive(Debug, Parser)]
+#[command(version)]
 struct Arguments {
     /// Cargo workspace path
     #[arg()]
