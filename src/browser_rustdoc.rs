@@ -64,7 +64,7 @@ impl RustdocBrowser {
             }
             TypeAlias(_) => "type",
             OpaqueTy(_) => "opaque type",
-            Constant(c) => return format!("const {}: {}", name, type_label(&c.type_)),
+            Constant { type_, const_: _ } => return format!("const {}: {}", name, type_label(type_)),
             Static(s) => return format!("static {}: {}", name, type_label(&s.type_)),
             ForeignType => "extern type",
             Macro(_) => "macro",
@@ -228,7 +228,7 @@ impl<'a> Browser for &'a RustdocBrowser {
         match item {
             Item::Item(item) => {
                 if let Some(docs) = &item.docs {
-                    txt += &docs;
+                    txt += docs;
                     txt.push('\n');
                 }
                 if let Some(span) = &item.span {
@@ -454,5 +454,6 @@ fn type_label(ty: &rustdoc_types::Type) -> String {
                 format!("{}::{name}", type_label(self_type))
             }
         }
+        Pat { type_, .. } => type_label(type_),
     }
 }

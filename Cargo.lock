@@ -616,7 +616,7 @@ dependencies = [
 
 [[package]]
 name = "rsbrowse"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "anyhow",
  "clap",
@@ -632,9 +632,9 @@ dependencies = [
 
 [[package]]
 name = "rustdoc-types"
-version = "0.24.0"
+version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0904b9147011800e63763fb9e49bbeaf76c1b6ab8982824c659dce5433712559"
+checksum = "cbe3d9a9818bcf1e08f3ce06b359260921c2271d2c650b3589a43f0fd020774a"
 dependencies = [
  "serde",
 ]

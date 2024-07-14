@@ -201,7 +201,7 @@ impl Analysis {
                 }
                 TypeAlias(ty) => type_ids(&ty.type_),
                 OpaqueTy(_) => vec![],
-                Constant(_) => vec![],
+                Constant { type_, .. } => type_ids(type_),
                 Static(_) => vec![],
                 ForeignType => vec![],
                 Macro(_) => vec![],
@@ -326,6 +326,7 @@ pub fn type_ids(ty: &rustdoc_types::Type) -> Vec<&rustdoc_types::Id> {
                 from_self
             }
         }
+        Pat { type_, .. } => type_ids(type_),
     }
 }
 
