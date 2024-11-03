@@ -13,7 +13,7 @@ use rayon::prelude::*;
 /// Write the analysis data to a subdirectory under target/ with this name.
 const SUBDIR: &str = "rsbrowse";
 
-const EMPTY_ID: &rustdoc_types::Id = &rustdoc_types::Id(String::new());
+const EMPTY_ID: &rustdoc_types::Id = &rustdoc_types::Id(u32::MAX);
 static EMPTY_STRING: String = String::new();
 
 // An ItemId which silently won't resolve to anything.
@@ -165,7 +165,7 @@ impl Analysis {
                 _ if parent_id == EMPTY_ITEM_ID => vec![],
                 Module(m) => m.items.iter().collect(),
                 ExternCrate { .. } => vec![],
-                Import(_) => vec![],
+                Use(_) => vec![],
                 Union(u) => u.fields.iter().chain(&u.impls).collect(),
                 Struct(s) => {
                     let fields = match &s.kind {
@@ -200,10 +200,9 @@ impl Analysis {
                         .collect()
                 }
                 TypeAlias(ty) => type_ids(&ty.type_),
-                OpaqueTy(_) => vec![],
                 Constant { type_, .. } => type_ids(type_),
                 Static(_) => vec![],
-                ForeignType => vec![],
+                ExternType => vec![],
                 Macro(_) => vec![],
                 ProcMacro(_) => vec![],
                 Primitive(_) => vec![],
@@ -311,6 +310,7 @@ pub fn type_ids(ty: &rustdoc_types::Type) -> Vec<&rustdoc_types::Id> {
             .filter_map(|g| match g {
                 rustdoc_types::GenericBound::TraitBound { trait_, .. } => Some(&trait_.id),
                 rustdoc_types::GenericBound::Outlives(_) => None,
+                rustdoc_types::GenericBound::Use(_) => None,
             })
             .collect(),
         Infer => vec![],

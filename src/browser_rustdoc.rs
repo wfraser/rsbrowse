@@ -17,7 +17,7 @@ impl RustdocBrowser {
         let prefix = match &item.inner {
             Module(_) => "mod",
             ExternCrate { name, .. } => return format!("extern crate {name}"),
-            Import(i) => return format!("use {}", i.source) + if i.glob { "::*" } else { "" },
+            Use(u) => return format!("use {}", u.source) + if u.is_glob { "::*" } else { "" },
             Union(_) => "union",
             Struct(_) => "struct",
             StructField(f) => return format!("{}: {}", name, type_label(f)),
@@ -63,23 +63,22 @@ impl RustdocBrowser {
                 };
             }
             TypeAlias(_) => "type",
-            OpaqueTy(_) => "opaque type",
             Constant { type_, const_: _ } => return format!("const {}: {}", name, type_label(type_)),
             Static(s) => return format!("static {}: {}", name, type_label(&s.type_)),
-            ForeignType => "extern type",
+            ExternType => "extern type",
             Macro(_) => "macro",
             ProcMacro(_) => "proc macro",
             Primitive(_) => "",
-            AssocConst { type_, default } => {
-                return if let Some(default) = default {
-                    format!("const {name}: {} = {default}", type_label(type_))
+            AssocConst { type_, value } => {
+                return if let Some(value) = value {
+                    format!("const {name}: {} = {value}", type_label(type_))
                 } else {
                     format!("const {name}: {}", type_label(type_))
                 }
             }
-            AssocType { default, .. } => {
-                return if let Some(default) = default {
-                    format!("type {name} = {}", type_label(default))
+            AssocType { type_, .. } => {
+                return if let Some(type_) = type_ {
+                    format!("type {name} = {}", type_label(type_))
                 } else {
                     format!("type {name}")
                 };
@@ -150,7 +149,7 @@ impl<'a> Browser for &'a RustdocBrowser {
                 }
                 rustdoc_types::ItemEnum::Function(f) => {
                     synthetic_items = f
-                        .decl
+                        .sig
                         .inputs
                         .iter()
                         // TODO: implement special cases for names of self:
@@ -158,7 +157,7 @@ impl<'a> Browser for &'a RustdocBrowser {
                         //  - &self
                         //  - &mut self
                         .map(|(name, ty)| (format!("{name}:"), ty))
-                        .chain(f.decl.output.as_ref().map(|ty| ("->".to_owned(), ty)))
+                        .chain(f.sig.output.as_ref().map(|ty| ("->".to_owned(), ty)))
                         .map(|(name, ty)| {
                             let mut ids = analysis::type_ids(ty)
                                 .into_iter()
@@ -199,7 +198,7 @@ impl<'a> Browser for &'a RustdocBrowser {
                 // Remove the clutter of blanket, and synthetic trait impls.
                 use rustdoc_types::ItemEnum::*;
                 match &inner.inner {
-                    Impl(i) if i.blanket_impl.is_some() || i.synthetic => None,
+                    Impl(i) if i.blanket_impl.is_some() || i.is_synthetic => None,
                     _ => Some((self.item_label(id.clone(), inner), (id, item))),
                 }
             })
@@ -317,7 +316,7 @@ fn generic_label(g: &rustdoc_types::GenericArgs) -> String {
     use std::borrow::Cow;
     let mut s = String::new();
     match g {
-        GenericArgs::AngleBracketed { args, bindings } => {
+        GenericArgs::AngleBracketed { args, constraints } => {
             if args.is_empty() {
                 return s;
             }
@@ -336,9 +335,9 @@ fn generic_label(g: &rustdoc_types::GenericArgs) -> String {
             );
             // TODO: dunno what to do with these
             s.push_str(
-                &bindings
+                &constraints
                     .iter()
-                    .map(|b| format!("{b:?}"))
+                    .map(|c| format!("{c:?}"))
                     .collect::<Vec<_>>()
                     .join(", "),
             );
@@ -387,13 +386,13 @@ fn type_label(ty: &rustdoc_types::Type) -> String {
         Primitive(p) => p.to_owned(),
         FunctionPointer(fp) => {
             let args = fp
-                .decl
+                .sig
                 .inputs
                 .iter()
                 .map(|(name, ty)| format!("{name}: {}", type_label(ty)))
                 .collect::<Vec<_>>()
                 .join(", ");
-            let ret = match &fp.decl.output {
+            let ret = match &fp.sig.output {
                 Some(ty) => format!(" -> {}", type_label(ty)),
                 None => String::new(),
             };
@@ -411,24 +410,25 @@ fn type_label(ty: &rustdoc_types::Type) -> String {
                 "impl {}",
                 t.iter()
                     .map(|g| match g {
-                        TraitBound { trait_, .. } => trait_.name.as_str(),
-                        Outlives(o) => o.as_str(),
+                        TraitBound { trait_, .. } => trait_.name.clone(),
+                        Outlives(o) => o.clone(),
+                        Use(u) => u.join(", "),
                     })
                     .collect::<Vec<_>>()
                     .join(" + "),
             )
         }
         Infer => "_".to_owned(),
-        RawPointer { mutable, type_ } => {
+        RawPointer { is_mutable, type_ } => {
             format!(
                 "*{} {}",
-                if *mutable { "mut" } else { "const" },
+                if *is_mutable { "mut" } else { "const" },
                 type_label(type_),
             )
         }
         BorrowedRef {
             lifetime,
-            mutable,
+            is_mutable,
             type_,
         } => {
             let mut s = "&".to_owned();
@@ -436,7 +436,7 @@ fn type_label(ty: &rustdoc_types::Type) -> String {
                 s.push_str(l);
                 s.push(' ');
             }
-            if *mutable {
+            if *is_mutable {
                 s.push_str("mut ");
             }
             s.push_str(&type_label(type_));
