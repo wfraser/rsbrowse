@@ -37,7 +37,7 @@ impl RustdocBrowser {
                 return if let Some(trait_) = &i.trait_ {
                     let path = self
                         .analysis
-                        .get_path(id.crate_sibling(&trait_.id), &trait_.name);
+                        .get_path(id.crate_sibling(&trait_.id), &trait_.path);
 
                     /* requires #![feature(let_chains)]
                     let mut trait_name = if let Some(path) = path && path[0] != id.crate_name() {
@@ -48,7 +48,7 @@ impl RustdocBrowser {
                     #[allow(clippy::unnecessary_unwrap)] // until if-let chains are stabilized
                     let mut trait_name = if path.is_none() || path.unwrap()[0] == id.crate_name() {
                         // trait in local crate, use trait name
-                        trait_.name.clone()
+                        trait_.path.clone()
                     } else {
                         // trait in foreign crate, use full path
                         path.unwrap().join("::")
@@ -352,6 +352,7 @@ fn generic_label(g: &rustdoc_types::GenericArgs) -> String {
                 s.push_str(&type_label(ty));
             }
         }
+        GenericArgs::ReturnTypeNotation => s.push_str(&format!("TODO: {g:?}")), // what is this for?
     }
     s
 }
@@ -360,7 +361,7 @@ fn type_label(ty: &rustdoc_types::Type) -> String {
     use rustdoc_types::Type::*;
     match ty {
         ResolvedPath(p) => {
-            let mut s = p.name.clone();
+            let mut s = p.path.clone();
             if let Some(args) = &p.args {
                 s.push_str(&generic_label(args));
             }
@@ -372,7 +373,7 @@ fn type_label(ty: &rustdoc_types::Type) -> String {
                     .traits
                     .iter()
                     .map(|t| {
-                        t.trait_.name.clone()
+                        t.trait_.path.clone()
                             + &t.trait_
                                 .args
                                 .as_ref()
@@ -406,13 +407,23 @@ fn type_label(ty: &rustdoc_types::Type) -> String {
         Array { type_, len } => format!("[{}; {len}]", type_label(type_)),
         ImplTrait(t) => {
             use rustdoc_types::GenericBound::*;
+            use rustdoc_types::PreciseCapturingArg::*;
             format!(
                 "impl {}",
                 t.iter()
                     .map(|g| match g {
-                        TraitBound { trait_, .. } => trait_.name.clone(),
+                        TraitBound { trait_, .. } => trait_.path.clone(),
                         Outlives(o) => o.clone(),
-                        Use(u) => u.join(", "),
+                        Use(u) => {
+                            u.into_iter()
+                                .map(|p| match p {
+                                    Lifetime(s) => s,
+                                    Param(s) => s,
+                                 })
+                                .cloned()
+                                .collect::<Vec<String>>()
+                                .join(", ")
+                        },
                     })
                     .collect::<Vec<_>>()
                     .join(" + "),
@@ -449,7 +460,7 @@ fn type_label(ty: &rustdoc_types::Type) -> String {
             trait_,
         } => {
             if let Some(trait_) = trait_ {
-                format!("<{} as {}>::{name}", type_label(self_type), trait_.name)
+                format!("<{} as {}>::{name}", type_label(self_type), trait_.path)
             } else {
                 format!("{}::{name}", type_label(self_type))
             }

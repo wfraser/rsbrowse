@@ -12,7 +12,7 @@ indicatif = "0.17.7"
 lazy_static = "1"
 log = "0.4"
 rayon = "1.8.0"
-rustdoc-types = "0.32.2"
+rustdoc-types = "0.40.0"
 serde_json = "1.0"
 tempfile = "3.8.1"
 
