@@ -1,6 +1,6 @@
 pub trait Browser {
-    type Item: Clone;
-    type ItemId: Clone;
+    type Item: Clone + Send + Sync;
+    type ItemId: Clone + Send + Sync;
     fn list_crates(&self) -> Vec<(String, Self::ItemId)>;
     #[allow(clippy::type_complexity)]
     fn list_items(&self, parent_id: &Self::ItemId) -> Vec<(String, (Self::ItemId, Self::Item))>;
