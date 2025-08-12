@@ -124,7 +124,7 @@ impl Analysis {
         Ok(Self { crates })
     }
 
-    pub fn crate_ids(&self) -> impl Iterator<Item = ItemId> + '_ {
+    pub fn crate_ids(&self) -> impl Iterator<Item = ItemId<'_>> + '_ {
         self.crates
             .values()
             .flat_map(|crate_| &crate_.index)

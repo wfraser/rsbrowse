@@ -415,7 +415,7 @@ fn type_label(ty: &rustdoc_types::Type) -> String {
                         TraitBound { trait_, .. } => trait_.path.clone(),
                         Outlives(o) => o.clone(),
                         Use(u) => {
-                            u.into_iter()
+                            u.iter()
                                 .map(|p| match p {
                                     Lifetime(s) => s,
                                     Param(s) => s,
