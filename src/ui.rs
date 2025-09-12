@@ -98,12 +98,18 @@ fn add_panel<B: Browser + 'static>(ui: &mut Cursive, parent_id: &B::ItemId, dept
     // go deeper within the tree. So this is why we go ahead and create the next views *right
     // away*.
     let mut next = vec![];
+    let mut ids = vec![]; // track processed IDs to avoid cycles
     let mut local_depth = depth;
     let mut local_parent = Cow::Borrowed(parent_id);
     while let Some(view) = make_selectview(data, &local_parent, local_depth) {
         if let Some((_label, (id, _item))) = view.get_item(0) {
+            if ids.contains(id) {
+                // cycle detected
+                break;
+            }
             local_depth += 1;
             local_parent = Cow::Owned(id.clone());
+            ids.push(id.clone());
         }
         next.push(view);
     }
