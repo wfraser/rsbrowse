@@ -69,7 +69,7 @@ impl RustdocBrowser {
             Macro(_) => "macro",
             ProcMacro(_) => "proc macro",
             Primitive(_) => "",
-            AssocConst { type_, value } => {
+            AssocConst { type_, value, default_unstable: _ } => {
                 return if let Some(value) = value {
                     format!("const {name}: {} = {value}", type_label(type_))
                 } else {
